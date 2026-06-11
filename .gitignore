@@ -1,5 +1,8 @@
 .DS_Store
 node_modules/
+dist/
 *.log
 .vscode/*
 !.vscode/extensions.json
+.env
+.env.local

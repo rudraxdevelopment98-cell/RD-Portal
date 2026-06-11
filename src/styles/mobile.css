@@ -1,0 +1,165 @@
+/* ============================================================
+   Mobile — ≤ 768px: sidebar collapses, bottom nav appears
+   ============================================================ */
+@media (max-width: 768px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    padding-bottom: 64px; /* room for bottom nav */
+  }
+
+  aside.side {
+    display: none;
+  }
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--ink-2);
+    border-top: 1px solid var(--line-soft);
+    z-index: 40;
+    height: 64px;
+    align-items: stretch;
+    padding: 0 4px;
+    gap: 2px;
+  }
+  .bottom-nav .bn-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.15s;
+    padding: 6px 4px;
+    position: relative;
+  }
+  .bottom-nav .bn-item.active {
+    color: var(--coral);
+    background: var(--coral-soft);
+  }
+  .bottom-nav .bn-item .bn-ic {
+    font-size: 18px;
+    line-height: 1;
+  }
+  .bottom-nav .bn-item .bn-count {
+    position: absolute;
+    top: 6px;
+    right: 12px;
+    background: var(--coral);
+    color: #23110d;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 999px;
+    font-family: var(--mono);
+  }
+
+  /* mobile header replaces topbar */
+  .topbar {
+    padding: 0 14px;
+    height: 52px;
+  }
+  .topbar .search {
+    width: 140px;
+  }
+
+  /* content */
+  .content {
+    padding: 14px;
+  }
+  .page-h {
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .page-h h1 {
+    font-size: 19px;
+  }
+  .page-h .actions {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
+  /* grids stack on mobile */
+  .grid.c4,
+  .grid.c3,
+  .grid.c2 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .grid.c4 .span2,
+  .grid.c3 .span2 {
+    grid-column: span 2;
+  }
+
+  /* portfolio cards */
+  .proj-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* stepper — compact on tiny screens */
+  .stepper {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .step {
+    flex: 0 0 calc(50% - 4px);
+  }
+  .step::before {
+    display: none;
+  }
+
+  /* tables scroll */
+  .tbl-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* modal full-width on mobile */
+  .modal {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 92vh;
+  }
+  .modal-bg {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  /* hide less critical topbar items */
+  .topbar .iBtn.hide-mob {
+    display: none;
+  }
+
+  /* login */
+  .login-card {
+    padding: 28px 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .grid.c4,
+  .grid.c3,
+  .grid.c2 {
+    grid-template-columns: 1fr;
+  }
+  .row {
+    flex-direction: column;
+    gap: 0;
+  }
+  .checks {
+    grid-template-columns: 1fr;
+  }
+}
