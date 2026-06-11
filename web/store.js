@@ -5,6 +5,7 @@
    ============================================================ */
 const SECTIONS=[
   {id:"dashboard",label:"Dashboard",ic:"▦"},
+  {id:"mywork",label:"My Work",ic:"◈"},
   {id:"project",label:"Project Roadmap",ic:"◎"},
   {id:"canvas",label:"Project Map",ic:"⬡"},
   {id:"tasks",label:"Tasks",ic:"✓"},
@@ -17,11 +18,12 @@ const SECTIONS=[
 const ALLSEC=SECTIONS.map(s=>s.id);
 const ROLES={
   Owner:{all:true},
-  Admin:{access:["dashboard","project","canvas","tasks","documents","research","activity","members","profile"]},
-  Manager:{access:["dashboard","project","canvas","tasks","documents","research","activity","profile"]},
-  Member:{access:["dashboard","project","canvas","tasks","documents","research","profile"]},
-  Viewer:{access:["dashboard","project","canvas","documents","research","profile"]},
+  Admin:{access:["dashboard","mywork","project","canvas","tasks","documents","research","activity","members","profile"]},
+  Manager:{access:["dashboard","mywork","project","canvas","tasks","documents","research","activity","profile"]},
+  Member:{access:["dashboard","mywork","project","canvas","tasks","documents","research","profile"]},
+  Viewer:{access:["dashboard","mywork","project","canvas","documents","research","profile"]},
 };
+const DEFAULT_PHASES=()=>[{num:"1",label:"Phase 1",name:"Planning",status:"active"},{num:"2",label:"Phase 2",name:"Build",status:""},{num:"3",label:"Phase 3",name:"Test",status:""},{num:"4",label:"Phase 4",name:"Launch",status:""}];
 const PCOLORS=["#6d5efc","#22d3ee","#34d399","#f59e0b","#ec4899","#a855f7","#0ea5e9","#ef4444"];
 function _uid(){return Math.random().toString(36).slice(2,10)}
 function _date(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toISOString().slice(0,10)}
@@ -34,7 +36,8 @@ const LocalStore={
   _seed(){const now=Date.now();
     this.db={firstRun:true,session:null,active:"shiva",
       users:[{id:_uid(),name:"Kuldeep",username:"kuldeep",password:"Shiva@2026",status:"Active",platformAdmin:true,created:now}],
-      projects:[{id:"shiva",name:"Shiva",key:"SHV",color:"#6d5efc",desc:"MCP / agent-tool security",created:now}],
+      projects:[{id:"shiva",name:"Shiva",key:"SHV",color:"#6d5efc",desc:"MCP / agent-tool security",created:now,
+        phases:[{num:"1",label:"Phase 0",name:"Learn + Break",status:"active"},{num:"2",label:"Phase 1",name:"OSS Scanner",status:""},{num:"3",label:"Phase 2",name:"Runtime Gateway",status:""},{num:"4",label:"Phase 3",name:"Hosted Layer",status:""}]}],
       members:[{id:_uid(),username:"kuldeep",projectId:"shiva",role:"Owner",access:ALLSEC.slice(),created:now}],
       tasks:[
         ["Day 1 · Install the MCP SDK","pip install + Claude Desktop as the client",1,"High"],
@@ -67,7 +70,7 @@ const LocalStore={
   async addActivity(action,projectId){this.db.activity.unshift({id:_uid(),projectId:projectId||this.db.active,user:this.db.session||"system",action,time:Date.now()});
     this.db.activity=this.db.activity.slice(0,300);this._save()},
   // projects
-  async createProject(o){const p={id:_uid(),created:Date.now(),...o};this.db.projects.push(p);
+  async createProject(o){const p={id:_uid(),created:Date.now(),phases:DEFAULT_PHASES(),...o};this.db.projects.push(p);
     this.db.members.push({id:_uid(),username:this.db.session,projectId:p.id,role:"Owner",access:ALLSEC.slice(),created:Date.now()});this._save();return p},
   async updateProject(id,patch){const p=this.db.projects.find(x=>x.id===id);if(p)Object.assign(p,patch);this._save()},
   async deleteProject(id){this.db.projects=this.db.projects.filter(p=>p.id!==id);this.db.members=this.db.members.filter(m=>m.projectId!==id);
@@ -118,7 +121,7 @@ function SupabaseStore(url,key){
         sb.from("research").select("*").order("created_at",{ascending:false}),
         sb.from("activity").select("*").order("created_at",{ascending:false}).limit(300)]);
       return{users:(u.data||[]).map(rU),
-        projects:(pr.data||[]).map(x=>({id:x.id,name:x.name,key:x.key,color:x.color,desc:x.descr,created:Date.parse(x.created_at)})),
+        projects:(pr.data||[]).map(x=>({id:x.id,name:x.name,key:x.key,color:x.color,desc:x.descr,phases:x.phases||null,created:Date.parse(x.created_at)})),
         members:(m.data||[]).map(x=>({id:x.id,username:x.username,projectId:x.project_id,role:x.role,access:x.access||[]})),
         tasks:(t.data||[]).map(x=>({id:x.id,projectId:x.project_id,title:x.title,desc:x.descr,assignee:x.assignee,due:x.due,priority:x.priority,status:x.status,phase:x.phase||"P0"})),
         docs:(d.data||[]).map(x=>({id:x.id,projectId:x.project_id,name:x.name,category:x.category,size:x.size,data:x.url,by:x.uploaded_by,date:Date.parse(x.created_at)})),
@@ -126,9 +129,9 @@ function SupabaseStore(url,key){
         activity:(a.data||[]).map(x=>({id:x.id,projectId:x.project_id,user:x.actor,action:x.action,time:Date.parse(x.created_at)}))};},
     async addActivity(action,projectId){await sb.from("activity").insert({actor:this.sessionUser()||"system",action,project_id:projectId||_active})},
     async createProject(o){const id=o.key.toLowerCase().replace(/[^a-z0-9]/g,"")||_uid();
-      await sb.from("projects").insert({id,name:o.name,key:o.key,color:o.color,descr:o.desc});
+      await sb.from("projects").insert({id,name:o.name,key:o.key,color:o.color,descr:o.desc,phases:DEFAULT_PHASES()});
       await sb.from("members").insert({username:this.sessionUser(),project_id:id,role:"Owner",access:ALLSEC});return{id,...o}},
-    async updateProject(id,patch){const p={};if(patch.name)p.name=patch.name;if(patch.desc)p.descr=patch.desc;await sb.from("projects").update(p).eq("id",id)},
+    async updateProject(id,patch){const p={};if(patch.name)p.name=patch.name;if(patch.desc)p.descr=patch.desc;if(patch.phases)p.phases=patch.phases;await sb.from("projects").update(p).eq("id",id)},
     async deleteProject(id){await sb.from("projects").delete().eq("id",id)},
     async createAccount(o){const {data,error}=await sb.functions.invoke("admin-create-user",{body:{name:o.name,username:o.username,password:o.password}});
       if(error)throw error;return o},

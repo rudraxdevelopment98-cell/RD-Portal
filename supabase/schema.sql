@@ -20,8 +20,11 @@ create table if not exists projects (
   key        text,
   color      text,
   descr      text,
+  phases     jsonb,                       -- custom roadmap: [{num,label,name,status}]
   created_at timestamptz not null default now()
 );
+-- migration for existing installs:
+alter table projects add column if not exists phases jsonb;
 
 create table if not exists members (
   id         uuid primary key default gen_random_uuid(),

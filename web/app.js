@@ -21,7 +21,7 @@ function myAccess(){const m=myMember();return m?m.access:[]}
 function isPlatformAdmin(){const u=me();return u&&u.platformAdmin}
 function isManager(){return ["Owner","Admin","Manager"].includes(myRole())}
 function isProjAdmin(){return ["Owner","Admin"].includes(myRole())}
-function can(sec){if(sec==="profile")return true;if(sec==="projects")return isPlatformAdmin();return myAccess().includes(sec)}
+function can(sec){if(sec==="profile"||sec==="mywork")return true;if(sec==="projects")return isPlatformAdmin();return myAccess().includes(sec)}
 function myProjects(){const ids=new Set(state.members.filter(m=>m.username===state.sessionUser).map(m=>m.projectId));
   let ps=state.projects.filter(p=>ids.has(p.id));if(isPlatformAdmin())ps=state.projects;return ps}
 function inProj(arr){const a=active();return arr.filter(x=>x.projectId===a)}
@@ -94,14 +94,14 @@ function renderShell(){
    </main></div>`;
 }
 function renderRoute(){
-  const map={dashboard:viewDashboard,project:viewProject,canvas:viewCanvas,tasks:viewTasks,documents:viewDocuments,
+  const map={dashboard:viewDashboard,mywork:viewMyWork,project:viewProject,canvas:viewCanvas,tasks:viewTasks,documents:viewDocuments,
     research:viewResearch,activity:viewActivity,members:viewMembers,projects:viewProjects,profile:viewProfile};
   const sec=SECTIONS.find(s=>s.id===route);const cb=document.getElementById("crumb");
   if(cb)cb.textContent=route==='projects'?'All Projects':(sec?sec.label:'Dashboard');
   if(!can(route))route="dashboard";
   document.getElementById("content").innerHTML=(map[route]||viewDashboard)();
   if(route==="canvas"&&window.initCanvas)setTimeout(window.initCanvas,0)}
-function quickSearch(q){if(!["tasks","documents","members","projects"].includes(route))return;const t=q.toLowerCase();
+function quickSearch(q){if(!["tasks","documents","members","projects","mywork"].includes(route))return;const t=q.toLowerCase();
   document.querySelectorAll("[data-srch]").forEach(el=>{el.style.display=el.dataset.srch.toLowerCase().includes(t)?"":"none"})}
 
 /* ============ VIEWS ============ */
@@ -143,13 +143,49 @@ function taskRow(t){const done=t.status==="Done";const pr={Critical:"red",High:"
       <div class="meta">Due ${t.due} · <span class="badge ${pr}" style="padding:1px 7px">${t.priority}</span></div></div>
     <div class="avatar" style="width:26px;height:26px;background:${avatarColor(assigneeName(t.assignee))}">${initials(assigneeName(t.assignee))}</div></div>`}
 
+/* ---- My Work: every task assigned to me, across all projects ---- */
+function viewMyWork(){
+  const u=me();const ids=new Set(myProjects().map(p=>p.id));
+  const mine=state.tasks.filter(t=>t.assignee===u.username&&ids.has(t.projectId));
+  const open=mine.filter(t=>t.status!=="Done"),done=mine.filter(t=>t.status==="Done");
+  const overdue=open.filter(t=>t.due&&t.due<date(0)).length;
+  const stat=(v,l)=>`<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  const byProj={};mine.forEach(t=>{(byProj[t.projectId]=byProj[t.projectId]||[]).push(t)});
+  const pr={Critical:"red",High:"amber",Medium:"blue",Low:"grey"};
+  const groups=Object.keys(byProj).map(pid=>{const p=state.projects.find(x=>x.id===pid)||{name:pid,color:"#64748b"};
+    const T=byProj[pid].slice().sort((a,b)=>(a.status==="Done")-(b.status==="Done")||(a.due||"").localeCompare(b.due||""));
+    const od=T.filter(t=>t.status==="Done").length;
+    return `<div class="card" style="margin-bottom:16px"><div class="hd">
+      <div class="avatar" style="width:26px;height:26px;background:${p.color||'#64748b'}">${esc(p.key||initials(p.name))}</div>
+      <h3>${esc(p.name)}</h3><span style="font-size:12px;color:var(--muted)">${od}/${T.length} done</span>
+      <div class="actions">${pid===active()?'<span class="badge green">active</span>':`<button class="btn sm" onclick="switchProject('${pid}')">Open project</button>`}</div></div>
+      <div class="bd"><div class="tlist">${T.map(t=>{const isDone=t.status==="Done";const late=!isDone&&t.due&&t.due<date(0);
+        return `<div class="titem ${isDone?'done':''}" data-srch="${esc(t.title)} ${esc(p.name)}">
+          <div class="cb ${isDone?'on':''}" onclick="toggleTaskX('${t.id}')">${isDone?'✓':''}</div>
+          <div style="flex:1;min-width:0"><div class="tt">${esc(t.title)}</div>
+            <div class="meta">Due ${t.due||"—"}${late?' · <span style="color:var(--red);font-weight:700">overdue</span>':''} · <span class="badge ${pr[t.priority]||'grey'}" style="padding:1px 7px">${t.priority}</span></div></div>
+          <select onchange="setTaskStatusX('${t.id}',this.value)" style="width:auto;padding:6px 8px;font-size:12px">
+            ${["To do","In progress","Done"].map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join("")}</select></div>`}).join("")}</div></div></div>`}).join("");
+  return `<div class="page-h"><div><h1>My Work</h1><p>Everything assigned to you, across all your projects.</p></div></div>
+   <div class="grid c3" style="margin-bottom:16px">${stat(open.length,"Open tasks")}${stat(overdue,"Overdue")}${stat(done.length,"Completed")}</div>
+   ${groups||emptyState("◈","Nothing assigned to you yet — enjoy the calm.")}`;
+}
+async function toggleTaskX(id){const t=state.tasks.find(x=>x.id===id);if(!t)return;const ns=t.status==="Done"?"To do":"Done";
+  await Store.updateTask(id,{status:ns});await Store.addActivity((ns==="Done"?"Completed":"Reopened")+" task: "+t.title,t.projectId);reload()}
+async function setTaskStatusX(id,s){const t=state.tasks.find(x=>x.id===id);if(!t)return;
+  await Store.updateTask(id,{status:s});await Store.addActivity("Set '"+t.title+"' → "+s,t.projectId);reload()}
+
+/* ---- per-project roadmap ---- */
+function projectPhases(p){if(Array.isArray(p.phases)&&p.phases.length)return p.phases;
+  if(p.id==="shiva")return [{num:"1",label:"Phase 0",name:"Learn + Break",status:"active"},{num:"2",label:"Phase 1",name:"OSS Scanner",status:""},{num:"3",label:"Phase 2",name:"Runtime Gateway",status:""},{num:"4",label:"Phase 3",name:"Hosted Layer",status:""}];
+  return [{num:"1",label:"Phase 1",name:"Planning",status:"active"},{num:"2",label:"Phase 2",name:"Build",status:""},{num:"3",label:"Phase 3",name:"Test",status:""},{num:"4",label:"Phase 4",name:"Launch",status:""}]}
 function viewProject(){
   if(!proj())return noProject();const p=proj();const shiva=p.id==="shiva";
-  const steps=shiva?[["1","Phase 0","Learn + Break","active"],["2","Phase 1","OSS Scanner",""],["3","Phase 2","Runtime Gateway",""],["4","Phase 3","Hosted Layer",""]]
-    :[["1","Phase 1","Planning","active"],["2","Phase 2","Build",""],["3","Phase 3","Test",""],["4","Phase 4","Launch",""]];
+  const steps=projectPhases(p).map((ph,i)=>[String(ph.num||i+1),ph.label,ph.name,ph.status||""]);
   const DOC="https://github.com/rudraxdevelopment98-cell/shiva/blob/claude/dazzling-galileo-j9yt04/docs/";
   const docs=[["▶ Getting started","getting-started/"],["Roadmap","roadmap/"],["Architecture","architecture/"],["Threat model","threat-model/"],["Platform / RBAC","platform/"]];
-  return `<div class="page-h"><div><h1>${esc(p.name)} · Roadmap</h1><p>${esc(p.desc||"Project phases and milestones.")}</p></div></div>
+  return `<div class="page-h"><div><h1>${esc(p.name)} · Roadmap</h1><p>${esc(p.desc||"Project phases and milestones.")}</p></div>
+     <div class="actions">${isManager()?`<button class="btn" onclick="openRoadmapModal()">✎ Edit roadmap</button>`:''}</div></div>
    <div class="card"><div class="bd" style="padding:30px 26px"><div class="stepper">${steps.map(s=>`<div class="step ${s[3]}">
      <div class="dot">${s[0]}</div><div class="t">${s[1]}</div><div class="s">${s[2]}</div></div>`).join("")}</div></div></div>
    ${shiva?`<div class="card" style="margin-top:16px"><div class="hd"><h3>Reference documents</h3></div><div class="bd"><div class="tlist">
@@ -296,6 +332,27 @@ function openResearchModal(){modal("Add research entry",`<label class="field"><s
     <label class="field"><span>Note</span><textarea id="r-note" rows="3"></textarea></label>`,
     "Add entry",async()=>{const title=val("r-title");if(!title)return alert("Title required");
       await Store.createResearch({title,url:val("r-url"),category:val("r-cat"),note:val("r-note")});await Store.addActivity("Added research: "+title);closeModal();reload()})}
+
+/* roadmap editor */
+function rmRowHtml(ph,i){return `<div class="row rm-row" style="margin-bottom:10px;align-items:center">
+   <input class="rm-label" value="${esc(ph.label||'')}" placeholder="Phase ${i+1}" style="flex:0 0 110px">
+   <input class="rm-name" value="${esc(ph.name||'')}" placeholder="What happens in this phase">
+   <select class="rm-status" style="flex:0 0 110px">
+     ${[["","Upcoming"],["active","Active"],["done","Done"]].map(s=>`<option value="${s[0]}" ${s[0]===(ph.status||"")?'selected':''}>${s[1]}</option>`).join("")}</select>
+   <button class="btn sm danger" style="flex:0 0 auto" onclick="this.closest('.rm-row').remove()">✕</button></div>`}
+function openRoadmapModal(){const p=proj();if(!p||!isManager())return;
+  const phases=projectPhases(p);
+  modal("Edit roadmap — "+esc(p.name),`<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Define this project's own phases. Mark one as <b>Active</b>, earlier ones as <b>Done</b>.</p>
+    <div id="rm-rows">${phases.map(rmRowHtml).join("")}</div>
+    <button class="btn sm" onclick="rmAddRow()">+ Add phase</button>`,
+    "Save roadmap",async()=>{
+      const rows=[...document.querySelectorAll("#rm-rows .rm-row")];
+      const phases=rows.map((r,i)=>({num:String(i+1),label:r.querySelector(".rm-label").value.trim()||("Phase "+(i+1)),
+        name:r.querySelector(".rm-name").value.trim(),status:r.querySelector(".rm-status").value}));
+      if(!phases.length)return alert("Add at least one phase.");
+      await Store.updateProject(p.id,{phases});await Store.addActivity("Updated the roadmap");closeModal();reload()})}
+function rmAddRow(){const box=document.getElementById("rm-rows");const i=box.querySelectorAll(".rm-row").length;
+  box.insertAdjacentHTML("beforeend",rmRowHtml({label:"",name:"",status:""},i))}
 
 /* projects + accounts + members */
 function openProjectModal(){const colors=PCOLORS.map((c,i)=>`<label style="display:inline-flex;align-items:center;gap:5px;margin-right:8px"><input type="radio" name="pc" value="${c}" ${i===0?'checked':''} style="width:auto"><span style="width:16px;height:16px;border-radius:4px;background:${c};display:inline-block"></span></label>`).join("");
