@@ -5,6 +5,7 @@ import Avatar from "./Avatar";
 import TokenSettings from "./TokenSettings";
 import { hasToken } from "../lib/github";
 import viewFor from "../views";
+import ErrorBoundary from "./ErrorBoundary";
 
 /* Mobile bottom-nav items — the 5 most important */
 const MOB_NAV = ["portfolio", "mywork", "tasks", "dashboard", "profile"];
@@ -132,7 +133,9 @@ export default function Shell() {
         </div>
 
         <div className="content">
-          <View />
+          <ErrorBoundary key={route} label={route}>
+            <View />
+          </ErrorBoundary>
         </div>
       </main>
 
