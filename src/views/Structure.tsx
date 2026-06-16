@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { usePortal } from "../context/PortalContext";
 import EmptyState from "../components/EmptyState";
 import RepoTree from "../components/RepoTree";
@@ -284,8 +284,8 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
         </div>
       )}
 
-      {/* Database tables + relations */}
-      {(bp.tables?.length ?? 0) > 0 && <DatabaseSchema tables={bp.tables} relations={bp.relations ?? []} />}
+      {/* Database tables + relations — interactive canvas */}
+      {(bp.tables?.length ?? 0) > 0 && <DatabaseCanvas tables={bp.tables} relations={bp.relations ?? []} />}
 
       {/* Ops strip */}
       {ops.length > 0 && (
@@ -306,50 +306,188 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
   );
 }
 
-/* Database schema — tables, columns (PK/FK), and relations. */
-function DatabaseSchema({ tables, relations }: { tables: import("../lib/blueprint").TableInfo[]; relations: import("../lib/blueprint").Relation[] }) {
+/* Database schema — interactive canvas: drag tables, expand on click,
+   connection lines between FK→PK, click a line to see what it means. */
+type TableInfo = import("../lib/blueprint").TableInfo;
+type Relation = import("../lib/blueprint").Relation;
+
+const NODE_W = 180;
+const HEAD_H = 38;
+const ROW_H = 22;
+
+function DatabaseCanvas({ tables, relations }: { tables: TableInfo[]; relations: Relation[] }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [activeRel, setActiveRel] = useState<number | null>(null);
+  const [hoverTable, setHoverTable] = useState<string | null>(null);
+  const drag = useRef<{ name: string; dx: number; dy: number } | null>(null);
+
+  // initial grid layout
+  useEffect(() => {
+    setPos((prev) => {
+      if (Object.keys(prev).length) return prev;
+      const cols = Math.max(1, Math.floor((wrapRef.current?.clientWidth || 760) / (NODE_W + 60)));
+      const next: Record<string, { x: number; y: number }> = {};
+      tables.forEach((t, i) => {
+        next[t.name] = { x: (i % cols) * (NODE_W + 60) + 24, y: Math.floor(i / cols) * 150 + 24 };
+      });
+      return next;
+    });
+  }, [tables]);
+
+  const nodeHeight = useCallback(
+    (t: TableInfo) => (expanded[t.name] ? HEAD_H + t.columns.length * ROW_H + 8 : HEAD_H),
+    [expanded]
+  );
+
+  const onMouseDown = (e: React.MouseEvent, name: string) => {
+    const p = pos[name];
+    if (!p) return;
+    drag.current = { name, dx: e.clientX - p.x, dy: e.clientY - p.y };
+  };
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!drag.current) return;
+      const { name, dx, dy } = drag.current;
+      setPos((p) => ({ ...p, [name]: { x: Math.max(0, e.clientX - dx), y: Math.max(0, e.clientY - dy) } }));
+    };
+    const up = () => { drag.current = null; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, []);
+
+  // anchor point for a relation endpoint (right or left edge mid-height)
+  const anchor = (table: string, toward: number) => {
+    const p = pos[table];
+    const t = tables.find((x) => x.name === table);
+    if (!p || !t) return null;
+    const h = nodeHeight(t);
+    const right = p.x + NODE_W;
+    const useRight = toward >= p.x + NODE_W / 2;
+    return { x: useRight ? right : p.x, y: p.y + Math.min(h, HEAD_H + ROW_H) / 2 + (h > HEAD_H ? 0 : 0) };
+  };
+
+  const canvasHeight = Math.max(
+    320,
+    ...tables.map((t) => (pos[t.name]?.y || 0) + nodeHeight(t) + 30)
+  );
+
   return (
-    <div className="dbschema">
-      <div className="inv-section-label" style={{ margin: "20px 0 12px" }}>
-        Database — {tables.length} table{tables.length !== 1 ? "s" : ""}{relations.length ? `, ${relations.length} relation${relations.length !== 1 ? "s" : ""}` : ""}
-      </div>
-      <div className="db-grid">
-        {tables.map((t) => (
-          <div key={t.name} className="db-table">
-            <div className="db-table-name">▤ {t.name}</div>
-            <div className="db-cols">
-              {t.columns.map((c) => (
-                <div key={c.name} className="db-col">
-                  <span className="db-col-name">
-                    {c.pk && <span className="db-key pk" title="primary key">PK</span>}
-                    {c.fk && <span className="db-key fk" title={`→ ${c.fk.table}.${c.fk.column}`}>FK</span>}
-                    {c.name}
-                  </span>
-                  <span className="db-col-type">{c.type}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+    <div className="dbc">
+      <div className="inv-section-label" style={{ margin: "20px 0 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>
+          Database — {tables.length} table{tables.length !== 1 ? "s" : ""}
+          {relations.length ? `, ${relations.length} connection${relations.length !== 1 ? "s" : ""}` : ""}
+        </span>
+        <span className="dbc-hint">drag to move · click a table to expand · click a line for detail</span>
       </div>
 
-      {relations.length > 0 && (
-        <div style={{ marginTop: 14 }}>
-          <div className="inv-section-label" style={{ marginBottom: 8 }}>Connections</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {relations.map((r, i) => (
-              <div key={i} className="db-rel">
-                <span className="db-rel-from">{r.from}.{r.fromCol}</span>
-                <span className="db-rel-arrow">→</span>
-                <span className="db-rel-to">{r.to}.{r.toCol}</span>
+      <div className="dbc-canvas" ref={wrapRef} style={{ height: canvasHeight }}>
+        {/* connection lines */}
+        <svg className="dbc-svg" style={{ height: canvasHeight }}>
+          {relations.map((r, i) => {
+            const tp = pos[r.to]; const fp = pos[r.from];
+            if (!tp || !fp) return null;
+            const a = anchor(r.from, tp.x);
+            const b = anchor(r.to, fp.x);
+            if (!a || !b) return null;
+            const midX = (a.x + b.x) / 2;
+            const d = `M ${a.x} ${a.y} C ${midX} ${a.y}, ${midX} ${b.y}, ${b.x} ${b.y}`;
+            const active = activeRel === i;
+            const dim = hoverTable && r.from !== hoverTable && r.to !== hoverTable;
+            return (
+              <g key={i} className={`dbc-edge ${active ? "on" : ""} ${dim ? "dim" : ""}`} onClick={() => setActiveRel(active ? null : i)}>
+                <path d={d} className="dbc-edge-hit" />
+                <path d={d} className="dbc-edge-line" />
+                <circle cx={b.x} cy={b.y} r={3.5} className="dbc-edge-dot" />
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* table nodes */}
+        {tables.map((t) => {
+          const p = pos[t.name];
+          if (!p) return null;
+          const open = !!expanded[t.name];
+          const linked = relations.some((r) => r.from === t.name || r.to === t.name);
+          return (
+            <div
+              key={t.name}
+              className={`dbc-node ${open ? "open" : ""} ${hoverTable === t.name ? "hl" : ""}`}
+              style={{ left: p.x, top: p.y, width: NODE_W }}
+              onMouseEnter={() => setHoverTable(t.name)}
+              onMouseLeave={() => setHoverTable((h) => (h === t.name ? null : h))}
+            >
+              <div
+                className="dbc-node-head"
+                onMouseDown={(e) => onMouseDown(e, t.name)}
+                onClick={() => setExpanded((x) => ({ ...x, [t.name]: !x[t.name] }))}
+              >
+                <span className="dbc-node-tw">▤</span>
+                <span className="dbc-node-name">{t.name}</span>
+                <span className="dbc-node-meta">{open ? "▾" : `${t.columns.length} col${t.columns.length !== 1 ? "s" : ""}`}</span>
               </div>
-            ))}
-          </div>
-        </div>
+              {open && (
+                <div className="dbc-node-cols">
+                  {t.columns.map((c) => (
+                    <div key={c.name} className="dbc-col">
+                      <span className="dbc-col-name">
+                        {c.pk && <span className="db-key pk" title="primary key">PK</span>}
+                        {c.fk && <span className="db-key fk" title={`→ ${c.fk.table}.${c.fk.column}`}>FK</span>}
+                        {c.name}
+                      </span>
+                      <span className="dbc-col-type">{c.type}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!open && linked && <span className="dbc-node-link" title="has connections">⇄</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* relation detail panel */}
+      {activeRel != null && relations[activeRel] && (
+        <RelationDetail r={relations[activeRel]} tables={tables} onClose={() => setActiveRel(null)} />
       )}
     </div>
   );
 }
+
+/* Explains, in plain words, what a connection between two tables means. */
+function RelationDetail({ r, tables, onClose }: { r: Relation; tables: TableInfo[]; onClose: () => void }) {
+  const fromCol = tables.find((t) => t.name === r.from)?.columns.find((c) => c.name === r.fromCol);
+  const toCol = tables.find((t) => t.name === r.to)?.columns.find((c) => c.name === r.toCol);
+  const sentence = `Each row in “${r.from}” points to one row in “${r.to}” through ${r.fromCol} → ${r.toCol}. One ${singular(r.to)} can be referenced by many ${plural(r.from)}.`;
+  return (
+    <div className="dbc-detail">
+      <button className="dbc-detail-x" onClick={onClose}>✕</button>
+      <div className="dbc-detail-title">
+        <span className="db-rel-from">{r.from}.{r.fromCol}</span>
+        <span className="db-rel-arrow"> → </span>
+        <span className="db-rel-to">{r.to}.{r.toCol}</span>
+      </div>
+      <p className="dbc-detail-body">{sentence}</p>
+      <div className="dbc-detail-grid">
+        <div>
+          <div className="inv-section-label">Foreign key</div>
+          <div className="dbc-detail-meta">{r.from}.{r.fromCol}{fromCol ? ` · ${fromCol.type}` : ""}</div>
+        </div>
+        <div>
+          <div className="inv-section-label">References</div>
+          <div className="dbc-detail-meta">{r.to}.{r.toCol}{toCol ? ` · ${toCol.type}` : ""}{toCol?.pk ? " · PK" : ""}</div>
+        </div>
+      </div>
+      <div className="dbc-detail-rel">Relationship: many “{r.from}” → one “{r.to}” (many-to-one)</div>
+    </div>
+  );
+}
+function singular(s: string) { return s.replace(/ies$/, "y").replace(/s$/, ""); }
+function plural(s: string) { return /s$/.test(s) ? s : s + "s"; }
 
 function DFlowNode({ node }: { node: { id: string; label: string; detail: string; icon: string } }) {
   return (
