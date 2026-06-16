@@ -176,5 +176,13 @@ export function makeSupabaseStore(url: string, key: string): Store {
     async createResearch(o: any) {
       await sb.from("research").insert({ title: o.title, url: o.url, category: o.category, note: o.note, created_by: this.sessionUser(), project_id: _active });
     },
+
+    subscribe(cb: () => void) {
+      const channel = sb
+        .channel("rd-portal-changes")
+        .on("postgres_changes", { event: "*", schema: "public" }, () => cb())
+        .subscribe();
+      return () => { sb.removeChannel(channel); };
+    },
   };
 }

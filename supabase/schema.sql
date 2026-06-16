@@ -114,6 +114,17 @@ drop policy if exists r_all on research;  create policy r_all on research  for a
 drop policy if exists a_sel on activity;  create policy a_sel on activity  for select to authenticated using (proj_member(project_id));
 drop policy if exists a_ins on activity;  create policy a_ins on activity  for insert to authenticated with check (proj_member(project_id));
 
+-- ---------- realtime ----------
+-- enable live updates for the portal (used by Store.subscribe).
+do $$
+declare t text;
+begin
+  foreach t in array array['projects','members','tasks','documents','research','activity'] loop
+    begin execute format('alter publication supabase_realtime add table %I', t);
+    exception when duplicate_object then null; when others then null; end;
+  end loop;
+end $$;
+
 -- ---------- storage ----------
 insert into storage.buckets (id, name, public) values ('documents','documents', true) on conflict (id) do nothing;
 drop policy if exists s_read on storage.objects;  create policy s_read on storage.objects for select using (bucket_id='documents');

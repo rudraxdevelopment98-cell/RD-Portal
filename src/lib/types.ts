@@ -164,5 +164,9 @@ export interface Store {
   deleteDoc(id: string): Promise<void>;
   createResearch(o: Partial<Research>): Promise<void>;
 
+  /** Realtime: invoke cb whenever server-side data changes. Returns an
+      unsubscribe fn. Cloud backend only; local is a no-op. */
+  subscribe?(cb: () => void): () => void;
+
   resetAll?(): Promise<void>;
 }

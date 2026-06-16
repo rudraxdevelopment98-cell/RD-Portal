@@ -4,7 +4,7 @@ import { Store } from "../lib/store";
 import { fmt, today } from "../lib/util";
 
 export default function Dashboard() {
-  const { state, me, proj, myRole, inProj, assigneeName, go, reload } = usePortal();
+  const { state, me, proj, myRole, inProj, assigneeName, go, reload, switchProject, myProjects, syncing } = usePortal();
   if (!proj || !me) return <EmptyState icon="▦" message="No project selected." />;
 
   const T = inProj(state.tasks);
@@ -26,14 +26,54 @@ export default function Dashboard() {
 
   const upcomingTasks = myTasks.filter((t) => t.status !== "Done").slice(0, 6);
 
+  /* cross-project overdue digest — my overdue tasks across every project I'm on */
+  const myProjectIds = new Set(myProjects.map((p) => p.id));
+  const overdueAll = state.tasks
+    .filter((t) => myProjectIds.has(t.projectId) && t.assignee === me.username && t.status !== "Done" && t.due && t.due < td)
+    .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
+  const projName = (id: string) => myProjects.find((p) => p.id === id)?.name ?? id;
+  const openTask = async (pid: string) => {
+    if (pid !== proj.id) await switchProject(pid);
+    go("tasks");
+  };
+
   return (
     <>
       <div className="page-h">
         <div>
           <h1>Welcome back, {me.name.split(" ")[0]}</h1>
-          <p>{proj.name} · <span style={{ color: "var(--coral)" }}>{myRole}</span></p>
+          <p>
+            {proj.name} · <span style={{ color: "var(--coral)" }}>{myRole}</span>
+            {syncing && <span style={{ marginLeft: 10, color: "var(--muted)", fontSize: 12, fontFamily: "var(--mono)" }}>⟳ syncing from GitHub…</span>}
+          </p>
         </div>
       </div>
+
+      {overdueAll.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--coral)", background: "rgba(255,122,102,0.06)" }}>
+          <div className="hd">
+            <h3 style={{ color: "var(--coral)" }}>⚠ {overdueAll.length} overdue task{overdueAll.length !== 1 ? "s" : ""} across your projects</h3>
+          </div>
+          <div className="bd" style={{ padding: "4px 17px 12px" }}>
+            {overdueAll.slice(0, 6).map((t) => (
+              <div
+                key={t.id}
+                onClick={() => openTask(t.projectId)}
+                style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--line-soft)", cursor: "pointer" }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.title}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{projName(t.projectId)}</div>
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--coral)", whiteSpace: "nowrap" }}>Due {t.due}</div>
+              </div>
+            ))}
+            {overdueAll.length > 6 && (
+              <div style={{ fontSize: 12, color: "var(--muted)", paddingTop: 8 }}>+ {overdueAll.length - 6} more</div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="grid c4" style={{ marginBottom: 16 }}>
         {[
