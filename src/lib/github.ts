@@ -300,7 +300,7 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
       language: null, topics: [], stars: 0, pushedAt: null, techStack: [],
       tree: { name: "/", path: "", type: "dir", children: [] }, fileCount: 0,
       tasks: [], phases: [], contributors: [], readme: null,
-      blueprint: { kind: "", idea: "", purpose: [], layers: [], pipeline: [], externals: [], ops: [] },
+      blueprint: { kind: "", idea: "", purpose: [], layers: [], pipeline: [], edges: [], externals: [], ops: [] },
       error: e?.message || "Could not analyze repo.",
     };
   }

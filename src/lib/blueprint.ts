@@ -10,15 +10,18 @@
 import type { Phase, Task, TreeNode } from "./types";
 
 export interface FlowNode { id: string; label: string; detail: string; icon: string; }
-export interface Layer { id: string; name: string; role: string; icon: string; dirs: string[]; }
+export interface FlowEdge { from: string; to: string; label: string; }
+export interface ExtService { id: string; label: string; detail: string; icon: string; connectsTo: string; /* pipeline node id */ flowIn: string; flowOut: string; }
+export interface Layer { id: string; name: string; role: string; icon: string; dirs: string[]; color: string; }
 export interface Blueprint {
   kind: string;
   idea: string;
   purpose: string[];
   layers: Layer[];
-  pipeline: FlowNode[];  // ordered client → server → data
-  externals: FlowNode[]; // third-party services
-  ops: FlowNode[];       // build / CI / deploy
+  pipeline: FlowNode[];
+  edges: FlowEdge[];
+  externals: ExtService[];
+  ops: FlowNode[];
 }
 
 export interface Stage extends Phase {
@@ -86,14 +89,14 @@ function detectKind(stack: string[], lang: string | null): string {
 }
 
 /* ---------- layers (building structure) ---------- */
-const LAYER_DEFS: { id: string; name: string; role: string; icon: string; match: string[] }[] = [
-  { id: "app", name: "Application", role: "Screens, components and client logic", icon: "◐", match: ["src", "app", "lib", "components", "screens", "pages", "hooks", "views", "ui", "features"] },
-  { id: "server", name: "Backend / API", role: "Server endpoints, edge functions and business logic", icon: "⇄", match: ["api", "server", "backend", "functions", "routes", "controllers", "services"] },
-  { id: "data", name: "Data layer", role: "Database schema, migrations and storage", icon: "▤", match: ["supabase", "db", "database", "migrations", "prisma", "models", "schema"] },
-  { id: "assets", name: "Assets", role: "Static files, images and fonts", icon: "▦", match: ["public", "assets", "static", "images", "img", "fonts"] },
-  { id: "test", name: "Tests", role: "Automated tests", icon: "✓", match: ["test", "tests", "__tests__", "e2e", "spec", "cypress"] },
-  { id: "ops", name: "Build & CI/CD", role: "Pipelines, scripts and deployment", icon: "⚙", match: [".github", "ci", ".circleci", "scripts", "deploy", "infra"] },
-  { id: "docs", name: "Docs", role: "Documentation", icon: "⌕", match: ["docs", "doc", "documentation"] },
+const LAYER_DEFS: { id: string; name: string; role: string; icon: string; color: string; match: string[] }[] = [
+  { id: "app",    name: "Application",   role: "Screens, components, hooks and client logic", icon: "◐", color: "var(--coral)",  match: ["src", "app", "lib", "components", "screens", "pages", "hooks", "views", "ui", "features"] },
+  { id: "server", name: "Backend / API", role: "Edge functions, server endpoints, business logic", icon: "⇄", color: "var(--gold)",   match: ["api", "server", "backend", "functions", "routes", "controllers", "services"] },
+  { id: "data",   name: "Data layer",    role: "Database schema, migrations, models, storage",  icon: "▤", color: "var(--sage)",   match: ["supabase", "db", "database", "migrations", "prisma", "models", "schema"] },
+  { id: "assets", name: "Assets",        role: "Static files, images and fonts",                icon: "▦", color: "var(--muted)",  match: ["public", "assets", "static", "images", "img", "fonts"] },
+  { id: "test",   name: "Tests",         role: "Automated tests — unit, integration, e2e",      icon: "✓", color: "var(--muted)",  match: ["test", "tests", "__tests__", "e2e", "spec", "cypress"] },
+  { id: "ops",    name: "Build & CI/CD", role: "Pipelines, scripts and deployment automation",  icon: "⚙", color: "var(--faint)", match: [".github", "ci", ".circleci", "scripts", "deploy", "infra"] },
+  { id: "docs",   name: "Docs",          role: "Documentation and guides",                      icon: "⌕", color: "var(--faint)", match: ["docs", "doc", "documentation"] },
 ];
 
 function buildLayers(topDirs: string[]): Layer[] {
@@ -101,7 +104,7 @@ function buildLayers(topDirs: string[]): Layer[] {
   const layers: Layer[] = [];
   for (const def of LAYER_DEFS) {
     const matched = topDirs.filter((_, i) => def.match.includes(dirs[i]));
-    if (matched.length) layers.push({ id: def.id, name: def.name, role: def.role, icon: def.icon, dirs: matched });
+    if (matched.length) layers.push({ id: def.id, name: def.name, role: def.role, icon: def.icon, color: def.color, dirs: matched });
   }
   return layers;
 }
@@ -115,7 +118,7 @@ function depHas(pkg: any, name: string): boolean {
 
 function buildFlow(input: {
   kind: string; stack: string[]; pkg: any; allPaths: string[]; topDirs: string[]; readme: string | null; description: string;
-}): { pipeline: FlowNode[]; externals: FlowNode[]; ops: FlowNode[] } {
+}): { pipeline: FlowNode[]; edges: FlowEdge[]; externals: ExtService[]; ops: FlowNode[] } {
   const { kind, stack, pkg, allPaths, topDirs, readme, description } = input;
   const s = new Set(stack);
   const lowDirs = topDirs.map((d) => d.toLowerCase());
@@ -127,40 +130,81 @@ function buildFlow(input: {
   const hasDb = hasSupabase || lowDirs.some((d) => ["db", "database", "migrations", "prisma"].includes(d)) || depHas(pkg, "prisma") || depHas(pkg, "drizzle-orm");
 
   const pipeline: FlowNode[] = [];
+  const edges: FlowEdge[] = [];
 
   // client
-  if (s.has("Expo") || s.has("React Native")) pipeline.push({ id: "client", label: "Mobile app", detail: [...s].filter((x) => ["Expo", "React Native", "TypeScript"].includes(x)).join(" · ") || "React Native", icon: "▢" });
-  else if (s.has("Next.js") || s.has("React") || s.has("Vue") || s.has("Svelte") || s.has("Angular")) pipeline.push({ id: "client", label: "Web client", detail: [...s].filter((x) => ["Next.js", "React", "Vue", "Svelte", "Angular", "TypeScript"].includes(x)).join(" · "), icon: "▢" });
-  else if (kind === "Backend service") pipeline.push({ id: "client", label: "API consumers", detail: "HTTP clients", icon: "▢" });
+  if (s.has("Expo") || s.has("React Native")) {
+    pipeline.push({ id: "client", label: "Mobile app", detail: [...s].filter((x) => ["Expo", "React Native", "TypeScript"].includes(x)).join(" · ") || "React Native", icon: "▢" });
+  } else if (s.has("Next.js") || s.has("React") || s.has("Vue") || s.has("Svelte") || s.has("Angular")) {
+    pipeline.push({ id: "client", label: "Web client", detail: [...s].filter((x) => ["Next.js", "React", "Vue", "Svelte", "Angular", "TypeScript"].includes(x)).join(" · "), icon: "▢" });
+  } else if (kind === "Backend service") {
+    pipeline.push({ id: "client", label: "API consumers", detail: "HTTP clients", icon: "▢" });
+  }
 
   // server / edge
   if (hasServerDir || s.has("Node API")) {
-    pipeline.push({ id: "server", label: hasSupabaseFns ? "Edge Functions" : "Backend / API", detail: hasSupabaseFns ? "Supabase Edge Functions" : (s.has("Node API") ? "Node API" : "Server endpoints"), icon: "⇄" });
+    pipeline.push({ id: "server", label: hasSupabaseFns ? "Edge Functions" : "Backend / API", detail: hasSupabaseFns ? "Supabase Edge Functions (Deno)" : (s.has("Node API") ? "Node.js API" : "Server"), icon: "⇄" });
   }
 
   // data
-  if (hasSupabase) pipeline.push({ id: "data", label: "Supabase", detail: "Postgres · Auth · Storage", icon: "▤" });
-  else if (hasDb) pipeline.push({ id: "data", label: "Database", detail: depHas(pkg, "prisma") ? "Prisma" : "SQL", icon: "▤" });
+  if (hasSupabase) pipeline.push({ id: "data", label: "Supabase", detail: "Postgres · Auth · Storage · RLS", icon: "▤" });
+  else if (hasDb) pipeline.push({ id: "data", label: "Database", detail: depHas(pkg, "prisma") ? "Prisma ORM" : "SQL", icon: "▤" });
 
-  // externals
-  const externals: FlowNode[] = [];
-  const addExt = (id: string, label: string, detail: string) => { if (!externals.find((e) => e.id === id)) externals.push({ id, label, detail, icon: "◇" }); };
-  if (depHas(pkg, "react-native-purchases") || /revenuecat/.test(text)) addExt("revenuecat", "RevenueCat", "In-app payments");
-  if (depHas(pkg, "stripe") || depHas(pkg, "@stripe/stripe-js")) addExt("stripe", "Stripe", "Payments");
-  if (depHas(pkg, "openai")) addExt("openai", "OpenAI", "LLM API");
-  if (depHas(pkg, "@anthropic-ai/sdk")) addExt("anthropic", "Claude API", "LLM API");
-  if (depHas(pkg, "firebase")) addExt("firebase", "Firebase", "Backend services");
-  if (/haveibeenpwned|have i been pwned|\bhibp\b|pwned passwords/.test(text)) addExt("hibp", "HaveIBeenPwned", "Breach data API");
-  if (depHas(pkg, "@sentry/react-native") || depHas(pkg, "@sentry/node") || depHas(pkg, "@sentry/react")) addExt("sentry", "Sentry", "Error tracking");
-  if (depHas(pkg, "expo-notifications") || /push notification/.test(text)) addExt("push", "Push", "Notifications");
+  // edges — infer what data flows on each hop
+  const isMobile = s.has("Expo") || s.has("React Native");
+  const hasHibp = /haveibeenpwned|have i been pwned|\bhibp\b|pwned passwords/.test(text);
+  if (pipeline[0] && pipeline[1]) {
+    // client → server/data
+    const reqLabel = hasHibp ? "email address / SHA-1 prefix" :
+      hasSupabase ? "HTTPS + JWT token" : "HTTP request";
+    const resLabel = hasHibp ? "breach list / password match" :
+      hasSupabase ? "JSON rows + RLS-filtered" : "JSON response";
+    edges.push({ from: pipeline[0].id, to: pipeline[1].id, label: `→ ${reqLabel}` });
+    edges.push({ from: pipeline[1].id, to: pipeline[0].id, label: `← ${resLabel}` });
+  }
+  if (pipeline[1]?.id === "server" && pipeline[2]) {
+    const dbIn = hasHibp ? "k-anon prefix query" : hasSupabase ? "SQL query + JWT" : "SQL query";
+    const dbOut = hasHibp ? "matching breach records" : hasSupabase ? "rows (RLS enforced)" : "result set";
+    edges.push({ from: "server", to: pipeline[2].id, label: `→ ${dbIn}` });
+    edges.push({ from: pipeline[2].id, to: "server", label: `← ${dbOut}` });
+  }
+
+  // externals — wired to specific pipeline nodes
+  const externals: ExtService[] = [];
+  const addExt = (x: Omit<ExtService, "icon">) => {
+    if (!externals.find((e) => e.id === x.id)) externals.push({ ...x, icon: "◇" });
+  };
+
+  const serverOrClient = (pipeline.find((n) => n.id === "server") ? "server" : "client");
+  const clientNode = pipeline.find((n) => n.id === "client")?.id || "client";
+
+  if (depHas(pkg, "react-native-purchases") || /revenuecat/.test(text))
+    addExt({ id: "revenuecat", label: "RevenueCat", detail: "In-app subscriptions & paywalls", connectsTo: clientNode, flowIn: "purchase request", flowOut: "entitlement status" });
+  if (depHas(pkg, "stripe") || depHas(pkg, "@stripe/stripe-js"))
+    addExt({ id: "stripe", label: "Stripe", detail: "Web payments", connectsTo: serverOrClient, flowIn: "payment intent", flowOut: "charge confirmation" });
+  if (depHas(pkg, "openai"))
+    addExt({ id: "openai", label: "OpenAI", detail: "LLM completions", connectsTo: serverOrClient, flowIn: "prompt + context", flowOut: "completion stream" });
+  if (depHas(pkg, "@anthropic-ai/sdk"))
+    addExt({ id: "anthropic", label: "Claude API", detail: "LLM completions", connectsTo: serverOrClient, flowIn: "prompt + context", flowOut: "completion stream" });
+  if (depHas(pkg, "firebase"))
+    addExt({ id: "firebase", label: "Firebase", detail: "Backend services", connectsTo: serverOrClient, flowIn: "SDK call", flowOut: "realtime / auth response" });
+  if (hasHibp) {
+    const hiNode = pipeline.find((n) => n.id === "server") ? "server" : clientNode;
+    addExt({ id: "hibp", label: "HaveIBeenPwned", detail: "Breach data (k-anonymity)", connectsTo: hiNode, flowIn: "SHA-1 prefix (5 chars)", flowOut: "matching suffix list" });
+  }
+  if (depHas(pkg, "@sentry/react-native") || depHas(pkg, "@sentry/node") || depHas(pkg, "@sentry/react"))
+    addExt({ id: "sentry", label: "Sentry", detail: "Error tracking", connectsTo: clientNode, flowIn: "error event + stack trace", flowOut: "ack" });
+  if (depHas(pkg, "expo-notifications") || /push notification/.test(text))
+    addExt({ id: "push", label: "Push Notifications", detail: "APNs / FCM", connectsTo: serverOrClient, flowIn: "trigger event", flowOut: "device notification" });
 
   // ops / build
   const ops: FlowNode[] = [];
-  if (allPaths.some((p) => /^\.github\/workflows\//.test(p))) ops.push({ id: "actions", label: "GitHub Actions", detail: "CI/CD", icon: "⚙" });
-  if (s.has("Docker") || allPaths.some((p) => /(^|\/)Dockerfile$/i.test(p))) ops.push({ id: "docker", label: "Docker", detail: "Containerized", icon: "⬡" });
-  if (s.has("Expo")) ops.push({ id: "eas", label: "EAS / App Stores", detail: "Mobile builds", icon: "▲" });
+  if (allPaths.some((p) => /^\.github\/workflows\//.test(p))) ops.push({ id: "actions", label: "GitHub Actions", detail: "CI/CD pipeline", icon: "⚙" });
+  if (s.has("Docker") || allPaths.some((p) => /(^|\/)Dockerfile$/i.test(p))) ops.push({ id: "docker", label: "Docker", detail: "Containerized deploy", icon: "⬡" });
+  if (s.has("Expo")) ops.push({ id: "eas", label: "EAS Build", detail: "iOS + Android builds", icon: "▲" });
+  if (isMobile) ops.push({ id: "stores", label: "App Stores", detail: "App Store · Play Store", icon: "◉" });
 
-  return { pipeline, externals, ops };
+  return { pipeline, edges, externals, ops };
 }
 
 /* ---------- top-level dirs from a TreeNode ---------- */
@@ -180,12 +224,13 @@ export function buildBlueprint(input: {
   language: string | null;
 }): Blueprint {
   const kind = detectKind(input.techStack, input.language);
+  const { pipeline, edges, externals, ops } = buildFlow({ kind, stack: input.techStack, pkg: input.pkg, allPaths: input.allPaths, topDirs: input.topDirs, readme: input.readme, description: input.description });
   return {
     kind,
     idea: extractIdea(input.readme, input.description),
     purpose: extractPurpose(input.readme),
     layers: buildLayers(input.topDirs),
-    ...buildFlow({ kind, stack: input.techStack, pkg: input.pkg, allPaths: input.allPaths, topDirs: input.topDirs, readme: input.readme, description: input.description }),
+    pipeline, edges, externals, ops,
   };
 }
 

@@ -794,26 +794,98 @@ table.tbl tr:hover td {
   border-radius: 8px; padding: 6px 11px; font-size: 12px;
 }
 
-/* building structure layers */
-.layers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.layer {
+/* ── data flow diagram ── */
+.dflow { }
+.dflow-row {
+  display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.dflow-col { display: flex; align-items: center; }
+.dflow-node {
+  background: var(--ink-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 18px;
+  min-width: 140px; max-width: 200px; text-align: center;
+  flex-shrink: 0;
+}
+.dflow-node-ic   { font-size: 20px; color: var(--coral); margin-bottom: 6px; }
+.dflow-node-label { font-size: 13.5px; font-weight: 700; }
+.dflow-node-detail { font-size: 10.5px; color: var(--muted); font-family: var(--mono); margin-top: 3px; line-height: 1.4; }
+
+.dflow-edge-col {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 0 6px; min-width: 110px;
+}
+.dflow-edge {
+  font-size: 10.5px; font-family: var(--mono);
+  padding: 3px 8px; border-radius: 5px; white-space: nowrap;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+}
+.dflow-edge.fwd { color: var(--sage);  background: rgba(127,209,168,.08); }
+.dflow-edge.bck { color: var(--gold);  background: rgba(232,197,106,.08); }
+
+/* external services */
+.dflow-exts { margin-top: 4px; }
+.dflow-ext-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;
+}
+.dflow-ext-card {
+  background: var(--ink-2); border: 1px solid var(--line-soft);
+  border-radius: 11px; overflow: hidden;
+}
+.dflow-ext-top {
+  background: var(--panel-2); padding: 5px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.dflow-ext-body { padding: 10px 12px; }
+.dflow-ext-flow {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted);
+}
+.dflow-ext-arrow { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+.dflow-ext-arrow.out { color: var(--sage); }
+.dflow-ext-arrow.in  { color: var(--gold); }
+
+.dflow-ops { margin-top: 18px; }
+
+/* ── building structure ── */
+.bstruct { }
+.bstruct-core { margin-bottom: 20px; }
+.bstruct-support { }
+
+.bstruct-layer {
   display: flex; gap: 12px; align-items: flex-start;
   background: var(--ink-2); border: 1px solid var(--line-soft);
-  border-radius: 11px; padding: 12px 14px;
+  border-left: 3px solid; border-radius: 11px; padding: 13px 15px;
 }
-.layer-ic {
-  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+.bstruct-ic {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  background: var(--panel-2); color: var(--gold); font-size: 16px;
+  background: var(--panel-2); font-size: 15px;
 }
-.layer-name { font-size: 13.5px; font-weight: 700; }
-.layer-role { font-size: 11.5px; color: var(--muted); margin-top: 1px; line-height: 1.4; }
+.bstruct-name { font-size: 13.5px; font-weight: 700; }
+.bstruct-role { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+
+.bstruct-connector {
+  display: flex; flex-direction: column; align-items: center; padding: 0;
+  position: relative; height: 36px; justify-content: center;
+}
+.bstruct-conn-line {
+  width: 2px; height: 100%; background: var(--line);
+  position: absolute; left: 50%; transform: translateX(-50%);
+}
+.bstruct-conn-label {
+  position: relative; z-index: 1;
+  background: var(--panel); padding: 1px 8px;
+  font-size: 9.5px; font-family: var(--mono); color: var(--faint);
+  letter-spacing: .08em; text-transform: uppercase;
+  border: 1px solid var(--line-soft); border-radius: 20px;
+}
 
 @media (max-width: 768px) {
-  .layers { grid-template-columns: 1fr; }
-  .flow { flex-direction: column; align-items: stretch; }
-  .flow-node-wrap { flex-direction: column; align-items: stretch; }
-  .flow-arrow { transform: rotate(90deg); padding: 8px 0; align-self: center; }
-  .flow-node { min-width: 0; }
+  .dflow-row { flex-direction: column; align-items: stretch; }
+  .dflow-col { flex-direction: column; align-items: stretch; }
+  .dflow-edge-col { flex-direction: row; padding: 4px 0; min-width: 0; justify-content: center; }
+  .dflow-node { min-width: 0; max-width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; }
+  .dflow-node-ic { margin-bottom: 0; font-size: 16px; }
   .jstage { min-width: 50%; }
 }
