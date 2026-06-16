@@ -23,12 +23,12 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(URL, SERVICE);
 
-    // verify the caller is a signed-in Owner/Admin
+    // verify the caller is a signed-in platform admin
     const token = (req.headers.get("authorization") || "").replace("Bearer ", "");
     const { data: caller } = await admin.auth.getUser(token);
     if (!caller?.user) return json({ error: "Not authenticated" }, 401);
-    const { data: prof } = await admin.from("profiles").select("role,status").eq("id", caller.user.id).single();
-    if (!prof || !["Owner", "Admin"].includes(prof.role) || prof.status !== "Active")
+    const { data: prof } = await admin.from("profiles").select("platform_admin,status").eq("id", caller.user.id).single();
+    if (!prof || !prof.platform_admin || prof.status !== "Active")
       return json({ error: "Not authorised" }, 403);
 
     const body = await req.json();
@@ -41,18 +41,17 @@ Deno.serve(async (req) => {
     }
 
     // create path
-    const { name, username, password, role, access } = body;
+    const { name, username, password } = body;
     if (!name || !username || !password) return json({ error: "Missing fields" }, 400);
 
-    const email = `${username}@shiva.local`;
+    const email = `${username}@rd.local`;
     const { data: created, error: cErr } = await admin.auth.admin.createUser({
       email, password, email_confirm: true,
     });
     if (cErr) return json({ error: cErr.message }, 400);
 
     const { error: pErr } = await admin.from("profiles").insert({
-      id: created.user.id, name, username, role: role || "Member",
-      access: access || [], status: "Active",
+      id: created.user.id, name, username, status: "Active", platform_admin: false,
     });
     if (pErr) {
       await admin.auth.admin.deleteUser(created.user.id);

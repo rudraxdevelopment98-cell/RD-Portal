@@ -121,17 +121,21 @@ export function makeSupabaseStore(url: string, key: string): Store {
     },
 
     async createAccount(o: { name: string; username: string; password: string }) {
-      // Insert profile directly — no Edge Function needed.
-      // The new member is added as a portal profile with a generated password.
-      // They can sign up via Supabase Auth later using <username>@rd.local + this password.
-      const { error } = await sb.from("profiles").insert({
-        name: o.name,
-        username: o.username,
-        role: "Member",
-        access: [],
-        status: "Active",
+      // Create the login entirely in the browser — no Edge Function needed.
+      // A throwaway client signs the new user up (so the admin's own session
+      // is never replaced), then self-inserts the profile row.
+      const tmp = createClient(url, key, {
+        auth: { storageKey: "rd-signup-tmp", persistSession: false, autoRefreshToken: false },
       });
+      const { data, error } = await tmp.auth.signUp({ email: EMAIL(o.username), password: o.password });
       if (error) throw new Error(error.message);
+      const uid = data.user?.id;
+      if (!uid) throw new Error("Could not create login — turn off 'Confirm email' in Supabase → Authentication → Providers → Email.");
+      const { error: pErr } = await tmp.from("profiles").insert({
+        id: uid, name: o.name, username: o.username, status: "Active", platform_admin: false,
+      });
+      if (pErr) throw new Error(pErr.message);
+      await tmp.auth.signOut();
       return o;
     },
 
@@ -140,7 +144,12 @@ export function makeSupabaseStore(url: string, key: string): Store {
     },
 
     async updateMember(id: string, patch: any) {
-      await sb.from("members").update(patch).eq("id", id);
+      // Map camelCase to snake_case for Supabase columns
+      const p: any = {};
+      if (patch.role !== undefined) p.role = patch.role;
+      if (patch.access !== undefined) p.access = patch.access;
+      if (patch.projectId !== undefined) p.project_id = patch.projectId;
+      await sb.from("members").update(p).eq("id", id);
     },
 
     async removeMember(id: string) {
