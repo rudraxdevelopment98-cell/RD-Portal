@@ -8,12 +8,14 @@ import { Store } from "../lib/store";
 import { today } from "../lib/util";
 import type { Priority } from "../lib/types";
 
+type TaskForm = { title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string };
+const BLANK: TaskForm = { title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" };
+
 export default function Tasks() {
   const { state, proj, isManager, inProj, assigneeName, reload } = usePortal();
   const [newTask, setNewTask] = useState(false);
-  const [form, setForm] = useState<{ title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string }>(
-    { title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" }
-  );
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<TaskForm>(BLANK);
 
   if (!proj) return <EmptyState icon="✓" message="No project selected." />;
 
@@ -39,12 +41,27 @@ export default function Tasks() {
     await reload();
   };
 
+  const openEdit = (t: (typeof tasks)[0]) => {
+    setForm({ title: t.title, desc: t.desc || "", assignee: t.assignee || "", due: t.due || "", priority: t.priority, phase: t.phase || "P0" });
+    setEditId(t.id);
+  };
+
   const createTask = async () => {
     if (!form.title.trim()) return alert("Title required");
     await Store.createTask({ ...form });
     await Store.addActivity("Created task: " + form.title);
     setNewTask(false);
-    setForm({ title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" });
+    setForm(BLANK);
+    await reload();
+  };
+
+  const saveEdit = async () => {
+    if (!editId) return;
+    if (!form.title.trim()) return alert("Title required");
+    await Store.updateTask(editId, { ...form });
+    await Store.addActivity("Updated task: " + form.title);
+    setEditId(null);
+    setForm(BLANK);
     await reload();
   };
 
@@ -121,7 +138,8 @@ export default function Tasks() {
                       </select>
                     </td>
                     {isManager && (
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <button className="btn sm" style={{ marginRight: 6 }} onClick={() => openEdit(t)}>Edit</button>
                         <button className="btn danger sm" onClick={() => deleteTask(t.id, t.title)}>Delete</button>
                       </td>
                     )}
@@ -133,6 +151,45 @@ export default function Tasks() {
           {!tasks.length && <EmptyState icon="✓" message="No tasks yet." />}
         </div>
       </div>
+
+      {editId && (
+        <Modal title="Edit task" onClose={() => { setEditId(null); setForm(BLANK); }} onOk={saveEdit} okLabel="Save changes">
+          <label className="field"><span>Title</span>
+            <input value={form.title} onChange={f("title")} placeholder="Task title" autoFocus />
+          </label>
+          <label className="field"><span>Description</span>
+            <input value={form.desc} onChange={f("desc")} placeholder="Short detail (optional)" />
+          </label>
+          <div className="row">
+            <label className="field"><span>Assign to</span>
+              <select value={form.assignee} onChange={f("assignee")}>
+                <option value="">Unassigned</option>
+                {members.map((m) => {
+                  const u = state.users.find((x) => x.username === m.username);
+                  return <option key={m.username} value={m.username}>{u?.name ?? m.username}</option>;
+                })}
+              </select>
+            </label>
+            <label className="field"><span>Due date</span>
+              <input type="date" value={form.due} onChange={f("due")} />
+            </label>
+          </div>
+          <div className="row">
+            <label className="field"><span>Priority</span>
+              <select value={form.priority} onChange={f("priority")}>
+                {["Critical", "High", "Medium", "Low"].map((p) => <option key={p}>{p}</option>)}
+              </select>
+            </label>
+            <label className="field"><span>Phase</span>
+              <select value={form.phase} onChange={f("phase")}>
+                {(proj.phases?.length ? proj.phases : [{ num: "P0", label: "Phase 1", name: "", status: "" }]).map((ph) => (
+                  <option key={ph.num} value={ph.num}>{ph.label}{ph.name ? ` · ${ph.name}` : ""}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </Modal>
+      )}
 
       {newTask && (
         <Modal title="New task" onClose={() => setNewTask(false)} onOk={createTask} okLabel="Create task">
