@@ -25,7 +25,11 @@ export default function Structure() {
     );
   }
 
-  const bp: Blueprint = proj.blueprint && proj.blueprint.layers?.length ? proj.blueprint : deriveBlueprint(proj);
+  // use the stored blueprint only if it has the current shape (includes edges);
+  // older stored blueprints predate the data-flow upgrade, so re-derive those.
+  const stored = proj.blueprint;
+  const isCurrentShape = !!stored && Array.isArray(stored.layers) && Array.isArray((stored as any).edges) && Array.isArray((stored as any).pipeline);
+  const bp: Blueprint = isCurrentShape ? (stored as Blueprint) : deriveBlueprint(proj);
   const { stages, progress } = deriveStages(proj.phases || []);
   const allDone = stages.length > 0 && stages.every((s) => s.state === "done");
 
@@ -209,19 +213,21 @@ export default function Structure() {
    edges and external services attached to their pipeline node.
 ───────────────────────────────────────────────────────── */
 function DataFlowDiagram({ bp }: { bp: Blueprint }) {
+  const pipeline = bp.pipeline ?? [];
+  const edges = bp.edges ?? [];
+  const externals = bp.externals ?? [];
+  const ops = bp.ops ?? [];
+
   // group edges by pair
   const edgesBetween = (a: string, b: string) =>
-    bp.edges.filter((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
-
-  // group externals by their connectsTo node
-  const extsFor = (nodeId: string) => bp.externals.filter((e) => e.connectsTo === nodeId);
+    edges.filter((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
 
   return (
     <div className="dflow">
       {/* Main pipeline row */}
       <div className="dflow-row">
-        {bp.pipeline.map((node, i) => {
-          const next = bp.pipeline[i + 1];
+        {pipeline.map((node, i) => {
+          const next = pipeline[i + 1];
           const pairEdges = next ? edgesBetween(node.id, next.id) : [];
           const fwd = pairEdges.find((e) => e.from === node.id);
           const bck = pairEdges.find((e) => e.to === node.id);
@@ -240,19 +246,19 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
       </div>
 
       {/* External services below pipeline — connected via dotted line to their node */}
-      {bp.externals.length > 0 && (
+      {externals.length > 0 && (
         <div className="dflow-exts">
           <div className="inv-section-label" style={{ marginBottom: 12 }}>External services</div>
           <div className="dflow-ext-grid">
-            {bp.externals.map((ext) => {
-              const nodeIdx = bp.pipeline.findIndex((n) => n.id === ext.connectsTo);
+            {externals.map((ext) => {
+              const nodeIdx = pipeline.findIndex((n) => n.id === ext.connectsTo);
               return (
                 <div key={ext.id} className="dflow-ext-card">
                   <div className="dflow-ext-top">
                     <div className="dflow-ext-badge">
                       {nodeIdx >= 0 && (
                         <span style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--faint)" }}>
-                          via {bp.pipeline[nodeIdx]?.label}
+                          via {pipeline[nodeIdx]?.label}
                         </span>
                       )}
                     </div>
@@ -279,11 +285,11 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
       )}
 
       {/* Ops strip */}
-      {bp.ops.length > 0 && (
+      {ops.length > 0 && (
         <div className="dflow-ops">
           <div className="inv-section-label" style={{ marginBottom: 8 }}>Build &amp; delivery</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {bp.ops.map((o) => (
+            {ops.map((o) => (
               <div key={o.id} className="flow-chip">
                 <span style={{ color: "var(--sage)" }}>{o.icon}</span>
                 <b>{o.label}</b>
