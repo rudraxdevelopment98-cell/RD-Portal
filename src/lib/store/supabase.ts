@@ -7,7 +7,7 @@ import { normalizeRepo } from "../util";
    Schema lives in supabase/schema.sql. */
 export function makeSupabaseStore(url: string, key: string): Store {
   const sb: SupabaseClient = createClient(url, key);
-  const EMAIL = (u: string) => `${u}@rd.local`;
+  const EMAIL = (u: string) => (u.includes("@") ? u : `${u}@rd.local`);
   let _session: any = null;
   let _profile: any = null;
   let _active: string | null = null;
