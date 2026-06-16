@@ -221,22 +221,30 @@ function milestonesToPhases(milestones: any[]): Phase[] {
   });
 }
 
-/* Choose the most representative DB schema file from the repo paths. */
-function pickSchemaPath(paths: string[]): string | null {
-  const prefs = [
+/* Choose schema files — returns multiple migration files sorted chronologically. */
+function pickSchemaPaths(paths: string[]): string[] {
+  // Canonical single-file schemas take priority
+  const singles = [
     /^supabase\/schema\.sql$/i,
     /^prisma\/schema\.prisma$/i,
     /(^|\/)schema\.prisma$/i,
     /(^|\/)schema\.sql$/i,
+  ];
+  for (const re of singles) {
+    const hits = paths.filter((p) => re.test(p));
+    if (hits.length) return [hits.sort()[0]];
+  }
+  // Migration folders — return ALL files sorted so we can merge them
+  const migrationRe = [
     /^supabase\/migrations\/.*\.sql$/i,
     /(^|\/)migrations\/.*\.sql$/i,
     /(^|\/)db\/.*\.sql$/i,
   ];
-  for (const re of prefs) {
-    const hits = paths.filter((p) => re.test(p));
-    if (hits.length) return hits.sort().pop()!; // latest migration / first match
+  for (const re of migrationRe) {
+    const hits = paths.filter((p) => re.test(p)).sort(); // lexicographic = chronological
+    if (hits.length) return hits;
   }
-  return null;
+  return [];
 }
 
 export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
@@ -264,12 +272,16 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
     const readmePath = allPaths.find((p) => /^readme(\.md|\.markdown|\.txt)?$/i.test(p)) || "README.md";
     const readme = await ghRaw(repo, readmePath);
 
-    // locate a DB schema to draw tables + relations from
-    const schemaPath = pickSchemaPath(allPaths);
+    // locate DB schema files — may be multiple migrations merged in order
+    const schemaPaths = pickSchemaPaths(allPaths);
     let schema: { content: string; path: string } | null = null;
-    if (schemaPath) {
-      const content = await ghRaw(repo, schemaPath);
-      if (content) schema = { content, path: schemaPath };
+    if (schemaPaths.length === 1) {
+      const content = await ghRaw(repo, schemaPaths[0]);
+      if (content) schema = { content, path: schemaPaths[0] };
+    } else if (schemaPaths.length > 1) {
+      const parts = await Promise.all(schemaPaths.map((p) => ghRaw(repo, p)));
+      const merged = parts.filter(Boolean).join("\n\n");
+      if (merged) schema = { content: merged, path: schemaPaths[schemaPaths.length - 1] };
     }
 
     const techStack = detectStack(allPaths, pkg);
