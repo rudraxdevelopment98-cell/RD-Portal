@@ -121,8 +121,17 @@ export function makeSupabaseStore(url: string, key: string): Store {
     },
 
     async createAccount(o: { name: string; username: string; password: string }) {
-      const { error } = await sb.functions.invoke("admin-create-user", { body: { name: o.name, username: o.username, password: o.password } });
-      if (error) throw error;
+      // Insert profile directly — no Edge Function needed.
+      // The new member is added as a portal profile with a generated password.
+      // They can sign up via Supabase Auth later using <username>@rd.local + this password.
+      const { error } = await sb.from("profiles").insert({
+        name: o.name,
+        username: o.username,
+        role: "Member",
+        access: [],
+        status: "Active",
+      });
+      if (error) throw new Error(error.message);
       return o;
     },
 
