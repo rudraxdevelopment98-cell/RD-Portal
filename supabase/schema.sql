@@ -28,6 +28,8 @@ create table if not exists projects (
   file_count     int,
   default_branch text,
   last_synced    timestamptz,
+  readme         text,                        -- cached README for the blueprint
+  blueprint      jsonb,                        -- inferred idea/layers/data-flow
   created_at     timestamptz not null default now()
 );
 -- migrations for existing installs:
@@ -39,6 +41,8 @@ alter table projects add column if not exists contributors jsonb;
 alter table projects add column if not exists file_count int;
 alter table projects add column if not exists default_branch text;
 alter table projects add column if not exists last_synced timestamptz;
+alter table projects add column if not exists readme text;
+alter table projects add column if not exists blueprint jsonb;
 
 create table if not exists members (
   id         uuid primary key default gen_random_uuid(),

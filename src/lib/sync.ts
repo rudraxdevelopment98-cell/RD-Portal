@@ -66,6 +66,8 @@ export async function onboardFromGitHub(analysis: RepoAnalysis, overrides?: { na
     contributors: analysis.contributors,
     fileCount: analysis.fileCount,
     defaultBranch: analysis.defaultBranch,
+    readme: analysis.readme ?? undefined,
+    blueprint: analysis.blueprint,
     lastSynced: Date.now(),
   });
 
@@ -89,6 +91,8 @@ export async function resyncProject(project: Project, analysis: RepoAnalysis, ex
     contributors: analysis.contributors,
     fileCount: analysis.fileCount,
     defaultBranch: analysis.defaultBranch,
+    readme: analysis.readme ?? undefined,
+    blueprint: analysis.blueprint,
     lastSynced: Date.now(),
     ...(analysis.phases.length ? { phases: analysis.phases } : {}),
   });

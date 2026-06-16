@@ -38,6 +38,8 @@ export interface Project {
   fileCount?: number;
   defaultBranch?: string;
   lastSynced?: number;
+  readme?: string;
+  blueprint?: import("./blueprint").Blueprint;
   created: number;
 }
 

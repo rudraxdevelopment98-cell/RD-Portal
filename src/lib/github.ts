@@ -6,6 +6,7 @@
    token (stored locally) enables private repos + 5,000/hr.
    ============================================================ */
 import type { Contributor, Phase, TreeNode } from "./types";
+import { buildBlueprint, type Blueprint } from "./blueprint";
 import { normalizeRepo } from "./util";
 
 export { normalizeRepo };
@@ -128,6 +129,8 @@ export interface RepoAnalysis {
   tasks: ImportedTask[];
   phases: Phase[];
   contributors: Contributor[];
+  readme: string | null;
+  blueprint: Blueprint;
   error?: string;
 }
 
@@ -234,15 +237,27 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
     const rawPaths: { path: string; type: string }[] = (treeData.tree || []).map((t: any) => ({ path: t.path, type: t.type }));
     const allPaths = rawPaths.map((p) => p.path);
 
-    // read package.json if present (root)
+    // read package.json + README if present (root)
     let pkg: any = null;
     if (allPaths.includes("package.json")) {
       const txt = await ghRaw(repo, "package.json");
       if (txt) { try { pkg = JSON.parse(txt); } catch { /* ignore */ } }
     }
+    const readmePath = allPaths.find((p) => /^readme(\.md|\.markdown|\.txt)?$/i.test(p)) || "README.md";
+    const readme = await ghRaw(repo, readmePath);
 
     const techStack = detectStack(allPaths, pkg);
     const { tree, count } = buildTree(rawPaths);
+    const topDirs = (tree.children || []).filter((c) => c.type === "dir").map((c) => c.name);
+    const blueprint = buildBlueprint({
+      description: meta.description || "",
+      readme,
+      topDirs,
+      allPaths,
+      pkg,
+      techStack,
+      language: meta.language ?? null,
+    });
 
     const tasks: ImportedTask[] = (Array.isArray(issues) ? issues : [])
       .filter((i: any) => !i.pull_request)
@@ -276,13 +291,17 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
       tasks,
       phases,
       contributors: contribs,
+      readme,
+      blueprint,
     };
   } catch (e: any) {
     return {
       repo, name: repo.split("/")[1] || repo, description: "", defaultBranch: "main",
       language: null, topics: [], stars: 0, pushedAt: null, techStack: [],
       tree: { name: "/", path: "", type: "dir", children: [] }, fileCount: 0,
-      tasks: [], phases: [], contributors: [], error: e?.message || "Could not analyze repo.",
+      tasks: [], phases: [], contributors: [], readme: null,
+      blueprint: { kind: "", idea: "", purpose: [], layers: [], pipeline: [], externals: [], ops: [] },
+      error: e?.message || "Could not analyze repo.",
     };
   }
 }
