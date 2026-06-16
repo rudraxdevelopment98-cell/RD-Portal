@@ -69,6 +69,7 @@ export function buildSeed(): PortalState & { firstRun: boolean; session: null; a
       { id: uid(), username: "kuldeep", projectId: "shiva", role: "Owner", access: ALLSEC.slice(), created: now },
       { id: uid(), username: "kuldeep", projectId: "breachly", role: "Owner", access: ALLSEC.slice(), created: now },
     ],
+    invites: [],
     tasks: taskRows.map((t) => ({
       id: uid(),
       projectId: t[4],

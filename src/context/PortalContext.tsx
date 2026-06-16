@@ -16,7 +16,7 @@ interface PS extends PortalState {
 }
 
 const INIT: PS = {
-  users: [], projects: [], members: [], tasks: [], docs: [], research: [], activity: [],
+  users: [], projects: [], members: [], invites: [], tasks: [], docs: [], research: [], activity: [],
   sessionUser: null, activeProject: null, loading: true, route: "portfolio",
 };
 

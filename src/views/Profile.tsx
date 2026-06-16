@@ -66,21 +66,33 @@ export default function Profile() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="hd"><h3>Change password</h3></div>
-          <div className="bd">
-            <label className="field">
-              <span>Current password</span>
-              <input type="password" value={cur} onChange={(e) => setCur(e.target.value)} placeholder="••••••••" />
-            </label>
-            <label className="field">
-              <span>New password</span>
-              <input type="password" value={nw} onChange={(e) => setNw(e.target.value)} placeholder="At least 6 characters" />
-            </label>
-            {msg && <div style={{ fontSize: 12.5, color: msgColor, marginBottom: 10 }}>{msg}</div>}
-            <button className="btn primary" onClick={savePassword}>Update password</button>
+        {Store.mode === "cloud" ? (
+          <div className="card">
+            <div className="hd"><h3>Sign-in</h3></div>
+            <div className="bd">
+              <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                You're signed in via Google/GitHub OAuth — there's no portal password to manage.
+                {me.email && <> Your account email is <b style={{ color: "var(--txt)" }}>{me.email}</b>.</>}
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="card">
+            <div className="hd"><h3>Change password</h3></div>
+            <div className="bd">
+              <label className="field">
+                <span>Current password</span>
+                <input type="password" value={cur} onChange={(e) => setCur(e.target.value)} placeholder="••••••••" />
+              </label>
+              <label className="field">
+                <span>New password</span>
+                <input type="password" value={nw} onChange={(e) => setNw(e.target.value)} placeholder="At least 6 characters" />
+              </label>
+              {msg && <div style={{ fontSize: 12.5, color: msgColor, marginBottom: 10 }}>{msg}</div>}
+              <button className="btn primary" onClick={savePassword}>Update password</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>

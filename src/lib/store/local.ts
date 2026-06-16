@@ -70,7 +70,7 @@ const LocalStoreImpl = {
 
   async fetchAll(this: any): Promise<PortalState> {
     const d = this.db;
-    return { users: d.users, projects: d.projects, members: d.members, tasks: d.tasks, docs: d.docs, research: d.research, activity: d.activity };
+    return { users: d.users, projects: d.projects, members: d.members, invites: d.invites || [], tasks: d.tasks, docs: d.docs, research: d.research, activity: d.activity };
   },
 
   async addActivity(this: any, action: string, projectId?: string) {
@@ -112,6 +112,7 @@ const LocalStoreImpl = {
   async addMember(this: any, o: any) {
     this.db.members.push({ id: uid(), created: Date.now(), ...o });
     this._save();
+    return { status: "added" as const };
   },
 
   async updateMember(this: any, id: string, patch: any) {

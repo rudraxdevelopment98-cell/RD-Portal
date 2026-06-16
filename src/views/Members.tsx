@@ -24,14 +24,17 @@ function genPassword(): string {
 
 export default function Members() {
   const { state, proj, isPlatformAdmin, isManager, reload } = usePortal();
+  const isCloud = Store.mode === "cloud";
   const [adding, setAdding] = useState(false);
   const [creds, setCreds] = useState<{ name: string; username: string; password: string } | null>(null);
-  const [form, setForm] = useState({ userId: "__new", newName: "", role: "Member" as Role, access: ALLSEC.slice() });
+  const [invited, setInvited] = useState<string | null>(null);
+  const [form, setForm] = useState({ userId: "__new", newName: "", email: "", role: "Member" as Role, access: ALLSEC.slice() });
 
   if (!proj) return <EmptyState icon="⚙" message="No project selected." />;
   if (!isManager && !isPlatformAdmin) return <EmptyState icon="🔒" message="Only Owner / Admin can manage members." />;
 
   const members = state.members.filter((m) => m.projectId === proj.id);
+  const invites = state.invites.filter((i) => i.projectId === proj.id);
   const existing = state.users.filter((u) => !members.some((m) => m.username === u.username));
 
   const setRole = (role: Role) => setForm((p) => ({ ...p, role, access: accessForRole(role) }));
@@ -44,22 +47,37 @@ export default function Members() {
   const save = async () => {
     const role = form.role;
     const access = form.access;
+
+    if (isCloud) {
+      if (!form.email.trim()) return alert("Email required");
+      const r = await Store.addMember({ email: form.email.trim(), projectId: proj.id, role, access });
+      setAdding(false);
+      await reload();
+      if (r.status === "invited") {
+        setInvited(form.email.trim());
+      } else {
+        await Store.addActivity("Added " + form.email + " to project");
+      }
+      return;
+    }
+
+    // local mode — original username/password flow
     if (form.userId === "__new") {
       if (!form.newName.trim()) return alert("Name required");
       const username = genUsername(form.newName, state.users);
       const password = genPassword();
       try {
-        await Store.createAccount({ name: form.newName, username, password });
+        await Store.createAccount!({ name: form.newName, username, password });
       } catch (e: any) {
         return alert("Could not create: " + e.message);
       }
-      await Store.addMember({ username, projectId: proj.id, role, access, id: "" } as any);
+      await Store.addMember({ username, projectId: proj.id, role, access });
       await Store.addActivity("Added " + form.newName + " to project");
       setAdding(false);
       await reload();
       setCreds({ name: form.newName, username, password });
     } else {
-      await Store.addMember({ username: form.userId, projectId: proj.id, role, access, id: "" } as any);
+      await Store.addMember({ username: form.userId, projectId: proj.id, role, access });
       await Store.addActivity("Added @" + form.userId + " to project");
       setAdding(false);
       await reload();
@@ -79,12 +97,18 @@ export default function Members() {
     await reload();
   };
 
+  const cancelInvite = async (id: string, email: string) => {
+    if (!confirm(`Cancel invite to ${email}?`)) return;
+    await Store.cancelInvite!(id);
+    await reload();
+  };
+
   return (
     <>
       <div className="page-h">
         <div><h1>Members &amp; Roles</h1><p>Who's on {proj.name} and what they can do.</p></div>
         <div className="actions">
-          <button className="btn primary" onClick={() => { setForm({ userId: "__new", newName: "", role: "Member", access: accessForRole("Member") }); setAdding(true); }}>
+          <button className="btn primary" onClick={() => { setForm({ userId: "__new", newName: "", email: "", role: "Member", access: accessForRole("Member") }); setAdding(true); }}>
             + Add member
           </button>
         </div>
@@ -134,21 +158,58 @@ export default function Members() {
             </tbody>
           </table>
         </div>
-        <div className="foot">{Store.mode === "cloud" ? "Cloud mode — real members via Supabase." : "Local mode — data is in this browser."}</div>
+        <div className="foot">{Store.mode === "cloud" ? "Cloud mode — real members via Supabase, sign-in via Google/GitHub." : "Local mode — data is in this browser."}</div>
       </div>
 
+      {isCloud && invites.length > 0 && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="hd"><h3>Pending invites</h3></div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Email</th><th>Role</th><th /></tr></thead>
+              <tbody>
+                {invites.map((i) => (
+                  <tr key={i.id}>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12.5 }}>{i.email}</td>
+                    <td><span className="chip slate">{i.role}</span></td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="btn danger sm" onClick={() => cancelInvite(i.id, i.email)}>Cancel</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="foot">They'll join automatically the moment they sign in with this email.</div>
+        </div>
+      )}
+
       {adding && (
-        <Modal title="Add member" onClose={() => setAdding(false)} onOk={save} okLabel="Add to project">
-          <label className="field"><span>Person</span>
-            <select value={form.userId} onChange={(e) => setForm((p) => ({ ...p, userId: e.target.value }))}>
-              <option value="__new">➕ Create new account…</option>
-              {existing.map((u) => <option key={u.username} value={u.username}>{u.name} (@{u.username})</option>)}
-            </select>
-          </label>
-          {form.userId === "__new" && (
-            <label className="field"><span>Full name</span>
-              <input value={form.newName} onChange={(e) => setForm((p) => ({ ...p, newName: e.target.value }))} placeholder="e.g. Asha Patel" />
+        <Modal title="Add member" onClose={() => setAdding(false)} onOk={save} okLabel={isCloud ? "Send invite" : "Add to project"}>
+          {isCloud ? (
+            <label className="field"><span>Email</span>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                placeholder="e.g. asha@gmail.com"
+                autoFocus
+              />
             </label>
+          ) : (
+            <>
+              <label className="field"><span>Person</span>
+                <select value={form.userId} onChange={(e) => setForm((p) => ({ ...p, userId: e.target.value }))}>
+                  <option value="__new">➕ Create new account…</option>
+                  {existing.map((u) => <option key={u.username} value={u.username}>{u.name} (@{u.username})</option>)}
+                </select>
+              </label>
+              {form.userId === "__new" && (
+                <label className="field"><span>Full name</span>
+                  <input value={form.newName} onChange={(e) => setForm((p) => ({ ...p, newName: e.target.value }))} placeholder="e.g. Asha Patel" />
+                </label>
+              )}
+            </>
           )}
           <label className="field"><span>Role</span>
             <select value={form.role} onChange={(e) => setRole(e.target.value as Role)}>
@@ -166,6 +227,15 @@ export default function Members() {
               ))}
             </div>
           </div>
+        </Modal>
+      )}
+
+      {invited && (
+        <Modal title="Invite sent ✓" onClose={() => setInvited(null)} okLabel="Done" onOk={() => setInvited(null)} hideCancel>
+          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+            <b style={{ color: "var(--txt)" }}>{invited}</b> doesn't have an account yet. They'll be added to this
+            project automatically the moment they sign in with Google or GitHub using that same email.
+          </p>
         </Modal>
       )}
 
