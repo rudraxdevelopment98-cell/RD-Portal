@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 import { PCOLORS } from "../lib/roles";
 import { Store } from "../lib/store";
 import type { NewProjectInput } from "../lib/types";
-import AddFromGitHub from "../components/AddFromGitHub";
+import RepoInvestigation from "./RepoInvestigation";
 import TokenSettings from "../components/TokenSettings";
 
 export default function AllProjects() {
@@ -127,7 +127,7 @@ export default function AllProjects() {
       )}
 
       {ghOpen && (
-        <AddFromGitHub
+        <RepoInvestigation
           onClose={() => setGhOpen(false)}
           onDone={(id) => { setGhOpen(false); switchProject(id); go("structure"); }}
           onNeedToken={() => { setGhOpen(false); setTokenOpen(true); }}

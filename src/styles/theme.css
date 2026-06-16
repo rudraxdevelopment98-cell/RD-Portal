@@ -601,3 +601,148 @@ table.tbl tr:hover td {
     transition: none !important;
   }
 }
+
+/* ============================================================
+   Repo Investigation panel
+   ============================================================ */
+.inv-overlay {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(5, 10, 13, 0.82);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.inv-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  width: 720px; max-width: 100%;
+  max-height: 88vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 32px 80px rgba(0,0,0,.55);
+}
+.inv-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.inv-body {
+  padding: 20px;
+  flex: 1 1 auto;
+}
+.inv-scroll {
+  overflow-y: auto;
+}
+.inv-footer {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.inv-lead {
+  font-size: 13.5px; color: var(--muted); line-height: 1.7;
+  margin: 0 0 18px;
+}
+.inv-err {
+  background: var(--coral-soft);
+  border: 1px solid rgba(255,122,102,.35);
+  border-radius: 9px;
+  padding: 10px 14px;
+  color: var(--coral);
+  font-size: 12.5px;
+  margin-bottom: 12px;
+}
+
+/* scanning steps */
+.inv-steps {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 0;
+}
+.inv-step {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px; color: var(--faint);
+  transition: color .2s;
+}
+.inv-step.running { color: var(--txt); }
+.inv-step.done    { color: var(--sage); }
+.inv-step.skip    { color: var(--faint); text-decoration: line-through; opacity: .5; }
+.inv-step-ic {
+  width: 20px; text-align: center;
+  font-family: var(--mono); font-size: 14px;
+}
+.inv-step-label { font-size: 13.5px; }
+
+/* spinning animation */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin .9s linear infinite; }
+
+/* meta stats bar */
+.inv-meta-bar {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.inv-meta-stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 14px 10px;
+  gap: 3px; font-size: 11px; color: var(--muted); text-align: center;
+  border-right: 1px solid var(--line-soft);
+}
+.inv-meta-stat:last-child { border-right: none; }
+
+/* tabs */
+.inv-tabs {
+  display: flex; gap: 0;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.inv-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 10px 16px; font-size: 12.5px; color: var(--muted); cursor: pointer;
+  font-family: var(--body); transition: color .15s;
+  margin-bottom: -1px;
+}
+.inv-tab.active { color: var(--coral); border-bottom-color: var(--coral); }
+.inv-tab:hover:not(.active) { color: var(--txt); }
+
+/* brief tab */
+.inv-desc {
+  font-size: 14px; line-height: 1.7; color: var(--muted);
+  margin: 0 0 16px;
+}
+.inv-section-label {
+  font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); font-family: var(--mono); margin-bottom: 8px;
+}
+.inv-phases {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.inv-phase {
+  background: var(--ink-2); border: 1px solid var(--line-soft);
+  border-radius: 9px; padding: 10px 14px; min-width: 120px;
+  display: flex; flex-direction: column;
+}
+.inv-phase.active { border-color: var(--coral); }
+.inv-phase.done   { opacity: .5; }
+.inv-phase-num  { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+.inv-phase-name { font-size: 13px; font-weight: 600; margin-top: 2px; }
+
+/* tasks tab */
+.inv-task-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+}
+.inv-task-num {
+  font-family: var(--mono); font-size: 11px; color: var(--faint);
+  padding-top: 2px; width: 32px; flex-shrink: 0;
+}
+.inv-task-title { font-size: 13px; font-weight: 500; }
+.inv-task-body  { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+
+@media (max-width: 768px) {
+  .inv-panel { border-radius: 16px 16px 0 0; width: 100%; max-height: 92vh; align-self: flex-end; }
+  .inv-meta-bar { grid-template-columns: repeat(2, 1fr); }
+  .inv-meta-stat:nth-child(2) { border-right: none; }
+}
