@@ -7,7 +7,7 @@
      · pipeline + externals  (data-flow diagram)
    Pure functions — no network. AI enrichment layers on later.
    ============================================================ */
-import type { Phase, Task, TreeNode } from "./types";
+import type { Phase, TreeNode } from "./types";
 
 export interface FlowNode { id: string; label: string; detail: string; icon: string; }
 export interface FlowEdge { from: string; to: string; label: string; }
@@ -257,22 +257,23 @@ function flattenPaths(tree: TreeNode | null | undefined, acc: string[] = []): st
   return acc;
 }
 
-/* ---------- stages from phases + tasks ---------- */
-export function deriveStages(phases: Phase[], _tasks: Task[]): { stages: Stage[]; currentNum: string | null } {
-  let currentSet = false;
-  let currentNum: string | null = null;
-  const stages: Stage[] = phases.map((ph) => {
-    let st: Stage["state"] = "upcoming";
-    if (ph.status === "done") st = "done";
-    else if (ph.status === "active") st = "active";
-    const current = st === "active" && !currentSet;
-    if (current) { currentSet = true; currentNum = ph.num; }
-    return { ...ph, state: st, current };
-  });
-  // if no explicit active, mark first non-done as current
-  if (!currentSet) {
-    const idx = stages.findIndex((s) => s.state !== "done");
-    if (idx >= 0) { stages[idx].current = true; stages[idx].state = "active"; currentNum = stages[idx].num; }
-  }
-  return { stages, currentNum };
+/* ---------- stages from phases ---------- */
+export function deriveStages(phases: Phase[]): { stages: Stage[]; currentNum: string | null; progress: number } {
+  const stages: Stage[] = phases.map((ph) => ({
+    ...ph,
+    state: ph.status === "done" ? "done" : ph.status === "active" ? "active" : "upcoming",
+    current: false,
+  }));
+
+  // current = first explicitly-active phase; else the first not-done phase
+  // (the next thing to work on). If everything is done, there is no "current".
+  let curIdx = stages.findIndex((s) => s.state === "active");
+  if (curIdx === -1) curIdx = stages.findIndex((s) => s.state !== "done");
+  if (curIdx >= 0) stages[curIdx].current = true;
+
+  // stage-based progress: done = 1, active = 0.5, upcoming = 0
+  const score = stages.reduce((a, s) => a + (s.state === "done" ? 1 : s.state === "active" ? 0.5 : 0), 0);
+  const progress = stages.length ? Math.round((score / stages.length) * 100) : 0;
+
+  return { stages, currentNum: curIdx >= 0 ? stages[curIdx].num : null, progress };
 }

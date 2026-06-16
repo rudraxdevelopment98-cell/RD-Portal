@@ -3,6 +3,7 @@ import GitHubPanel from "../components/GitHubPanel";
 import EmptyState from "../components/EmptyState";
 import Avatar from "../components/Avatar";
 import { today } from "../lib/util";
+import { deriveStages } from "../lib/blueprint";
 
 export default function Portfolio() {
   const { state, myProjects, go, switchProject } = usePortal();
@@ -29,8 +30,13 @@ export default function Portfolio() {
           const open = tasks.filter((t) => t.status !== "Done").length;
           const overdue = tasks.filter((t) => t.status !== "Done" && t.due && t.due < td).length;
           const members = state.members.filter((m) => m.projectId === p.id).length;
-          const prog = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
-          const activePhase = (p.phases ?? []).find((ph) => ph.status === "active");
+          // progress follows the build journey (stage status) when phases carry
+          // status; falls back to task completion for brand-new projects.
+          const { stages, progress: stageProg, currentNum } = deriveStages(p.phases || []);
+          const hasStatus = (p.phases || []).some((ph) => ph.status === "done" || ph.status === "active");
+          const prog = hasStatus ? stageProg : (tasks.length ? Math.round((done / tasks.length) * 100) : 0);
+          const allDone = stages.length > 0 && stages.every((s) => s.state === "done");
+          const activePhase = (p.phases ?? []).find((ph) => ph.num === currentNum);
 
           return (
             <div
@@ -46,7 +52,11 @@ export default function Portfolio() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <h3 style={{ margin: 0 }}>{p.name}</h3>
-                  {activePhase && (
+                  {allDone ? (
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--sage)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                      ✓ shipped
+                    </span>
+                  ) : activePhase && (
                     <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--coral)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
                       {activePhase.label} · {activePhase.name}
                     </span>

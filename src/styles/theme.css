@@ -769,6 +769,8 @@ table.tbl tr:hover td {
   background: var(--panel-2); border: 2px solid var(--line);
   font-size: 12px; font-family: var(--mono); color: var(--muted); margin-bottom: 8px;
 }
+.jstage.clickable { cursor: pointer; }
+.jstage.clickable:hover .jdot { border-color: var(--coral); }
 .jstage.done .jdot   { background: var(--sage); border-color: var(--sage); color: var(--ink); }
 .jstage.active .jdot { background: var(--coral); border-color: var(--coral); color: #fff; box-shadow: 0 0 0 4px var(--coral-soft); }
 .jlabel { font-size: 10px; font-family: var(--mono); color: var(--faint); text-transform: uppercase; letter-spacing: .08em; }

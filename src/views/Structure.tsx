@@ -5,10 +5,12 @@ import RepoTree from "../components/RepoTree";
 import { analyzeRepo } from "../lib/github";
 import { resyncProject } from "../lib/sync";
 import { deriveBlueprint, deriveStages, type Blueprint } from "../lib/blueprint";
+import { Store } from "../lib/store";
 import { fmt } from "../lib/util";
+import type { PhaseStatus } from "../lib/types";
 
 export default function Structure() {
-  const { state, proj, isManager, inProj, reload } = usePortal();
+  const { state, proj, isManager, reload } = usePortal();
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -24,10 +26,25 @@ export default function Structure() {
   }
 
   const bp: Blueprint = proj.blueprint && proj.blueprint.layers?.length ? proj.blueprint : deriveBlueprint(proj);
-  const { stages } = deriveStages(proj.phases || [], inProj(state.tasks));
-  const tasks = inProj(state.tasks);
-  const done = tasks.filter((t) => t.status === "Done").length;
-  const prog = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const { stages, progress } = deriveStages(proj.phases || []);
+  const allDone = stages.length > 0 && stages.every((s) => s.state === "done");
+
+  // click a stage to cycle its status: upcoming → active → done → upcoming
+  const cycleStage = async (num: string) => {
+    if (!isManager) return;
+    const next: Record<string, PhaseStatus> = { "": "active", active: "done", done: "" };
+    const phases = (proj.phases || []).map((p) => (p.num === num ? { ...p, status: next[p.status || ""] } : p));
+    await Store.updateProject(proj.id, { phases });
+    await Store.addActivity(`Set ${num} stage status`);
+    await reload();
+  };
+
+  const markAllDone = async () => {
+    const phases = (proj.phases || []).map((p) => ({ ...p, status: "done" as PhaseStatus }));
+    await Store.updateProject(proj.id, { phases });
+    await Store.addActivity("Marked project complete");
+    await reload();
+  };
 
   const sync = async () => {
     setSyncing(true); setMsg("");
@@ -78,20 +95,40 @@ export default function Structure() {
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="hd">
             <h3>Build journey</h3>
-            <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: "var(--faint)" }}>{prog}% tasks done</span>
+            <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: allDone ? "var(--sage)" : "var(--faint)" }}>
+              {allDone ? "✓ shipped · 100%" : `${progress}% complete`}
+            </span>
           </div>
           <div className="bd">
             <div className="journey">
               {stages.map((s, i) => (
-                <div key={s.num} className={`jstage ${s.state}${s.current ? " current" : ""}`}>
+                <div
+                  key={s.num}
+                  className={`jstage ${s.state}${s.current ? " current" : ""}${isManager ? " clickable" : ""}`}
+                  onClick={() => cycleStage(s.num)}
+                  title={isManager ? "Click to change status (upcoming → active → done)" : undefined}
+                >
                   {i > 0 && <div className="jconnect" />}
                   <div className="jdot">{s.state === "done" ? "✓" : i + 1}</div>
                   <div className="jlabel">{s.label}</div>
                   <div className="jname">{s.name}</div>
-                  {s.current && <div className="jhere">◉ you are here</div>}
+                  {s.current && !allDone && <div className="jhere">◉ you are here</div>}
+                  {s.state === "done" && <div className="jhere" style={{ color: "var(--sage)" }}>done</div>}
                 </div>
               ))}
             </div>
+            {isManager && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line-soft)" }}>
+                <span style={{ fontSize: 11.5, color: "var(--faint)" }}>
+                  Just imported and the project is further along? Click any stage to set its status, or
+                </span>
+                {allDone ? (
+                  <button className="btn ghost sm" onClick={() => cycleStage(stages[stages.length - 1].num)}>Reopen last stage</button>
+                ) : (
+                  <button className="btn ghost sm" onClick={markAllDone}>Mark all complete</button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
