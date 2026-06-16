@@ -24,6 +24,19 @@ export function buildSeed(): PortalState & { firstRun: boolean; session: null; a
     ["Phase 2 · Monitoring backend", "Supabase cron + HIBP polling; push on new breach", 10, "High", "breachly", "P1"],
     ["Phase 2 · Password exposure check", "HIBP Pwned Passwords k-anonymity, local hash prefix only", 12, "Medium", "breachly", "P1"],
     ["App Store submission prep", "Screenshots, privacy policy, App Privacy labels, TestFlight", 14, "High", "breachly", "P2"],
+    // RUDRA — personal voice-driven AI command center (JARVIS-style)
+    ["Phase 0 · Scaffold the skeleton", "Repo layout, brain/bus/voice/skills stubs, Docker, docs — boots clean", 1, "High", "rudra", "P0"],
+    ["Phase 1 · Wire the Claude brain", "Real Anthropic client in brain/llm.py + v0 tool catalogue", 3, "Critical", "rudra", "P1"],
+    ["Phase 1 · Orchestrator text loop", "text in → Claude tool call → skill → spoken-style reply", 4, "High", "rudra", "P1"],
+    ["Phase 1 · System skill end-to-end", "time · status · capabilities working for real", 5, "Medium", "rudra", "P1"],
+    ["Phase 2 · Local wake word \"Rudra\"", "openWakeWord listening loop on the mic", 8, "High", "rudra", "P2"],
+    ["Phase 2 · Local STT (faster-whisper)", "record-until-silence → transcribe", 9, "High", "rudra", "P2"],
+    ["Phase 2 · Cloud TTS voice", "pick provider, implement say() behind the tts interface", 10, "Medium", "rudra", "P2"],
+    ["Phase 3 · PC agent + control", "open app · run script · volume · power (confirm) · file search", 14, "High", "rudra", "P3"],
+    ["Phase 4 · Home Assistant / IoT", "lights · plugs · sensors via the iot skill", 18, "Medium", "rudra", "P4"],
+    ["Phase 5 · Flash first ESP32 node", "node auto-registers; drive a real relay by voice", 22, "Medium", "rudra", "P5"],
+    ["Phase 6 · Phone integration", "notify · find · locate via HA Companion / Tasker / Shortcuts", 26, "Medium", "rudra", "P6"],
+    ["Phase 7 · Live dashboard + security", "online devices, bus feed, voice auth, allow-lists, audit log", 30, "Medium", "rudra", "P7"],
   ];
 
   return {
@@ -50,6 +63,25 @@ export function buildSeed(): PortalState & { firstRun: boolean; session: null; a
         ],
       },
       {
+        id: "rudra",
+        name: "RUDRA",
+        key: "RDR",
+        color: "#B388FF",
+        desc: "Personal voice-driven AI command center (JARVIS-style) — controls PC, phone, IoT & custom electronics",
+        repo: "rudraxdevelopment98-cell/RUDRA",
+        created: now,
+        phases: [
+          { num: "1", label: "Phase 0", name: "Skeleton", status: "active" },
+          { num: "2", label: "Phase 1", name: "Brain (text)", status: "" },
+          { num: "3", label: "Phase 2", name: "Voice", status: "" },
+          { num: "4", label: "Phase 3", name: "PC Control", status: "" },
+          { num: "5", label: "Phase 4", name: "Smart Home", status: "" },
+          { num: "6", label: "Phase 5", name: "Electronics", status: "" },
+          { num: "7", label: "Phase 6", name: "Phone", status: "" },
+          { num: "8", label: "Phase 7", name: "Polish + Dashboard", status: "" },
+        ],
+      },
+      {
         id: "breachly",
         name: "Breachly",
         key: "BRY",
@@ -67,6 +99,7 @@ export function buildSeed(): PortalState & { firstRun: boolean; session: null; a
     ],
     members: [
       { id: uid(), username: "kuldeep", projectId: "shiva", role: "Owner", access: ALLSEC.slice(), created: now },
+      { id: uid(), username: "kuldeep", projectId: "rudra", role: "Owner", access: ALLSEC.slice(), created: now },
       { id: uid(), username: "kuldeep", projectId: "breachly", role: "Owner", access: ALLSEC.slice(), created: now },
     ],
     tasks: taskRows.map((t) => ({
@@ -84,12 +117,18 @@ export function buildSeed(): PortalState & { firstRun: boolean; session: null; a
     docs: [],
     research: [
       { id: uid(), projectId: "shiva", title: "Simon Willison — MCP prompt injection", url: "https://simonwillison.net/tags/model-context-protocol/", category: "Reference", note: "Core read on why MCP has injection problems.", by: "kuldeep", date: now },
+      { id: uid(), projectId: "rudra", title: "Anthropic — Tool use (function calling)", url: "https://docs.anthropic.com/en/docs/build-with-claude/tool-use", category: "Reference", note: "How the brain routes natural commands to skills. Core of Phase 1.", by: "kuldeep", date: now },
+      { id: uid(), projectId: "rudra", title: "openWakeWord", url: "https://github.com/dscripka/openWakeWord", category: "Reference", note: "Free, local wake-word detection. Can train a custom 'Rudra' word.", by: "kuldeep", date: now },
+      { id: uid(), projectId: "rudra", title: "faster-whisper", url: "https://github.com/SYSTRAN/faster-whisper", category: "Reference", note: "Fast local speech-to-text. Keeps audio private (Phase 2).", by: "kuldeep", date: now },
+      { id: uid(), projectId: "rudra", title: "Eclipse Mosquitto (MQTT broker)", url: "https://mosquitto.org/", category: "Reference", note: "The nervous system — every device talks over this bus.", by: "kuldeep", date: now },
+      { id: uid(), projectId: "rudra", title: "Home Assistant", url: "https://www.home-assistant.io/", category: "Reference", note: "Bridges RUDRA to thousands of smart-home devices (Phase 4).", by: "kuldeep", date: now },
       { id: uid(), projectId: "breachly", title: "Have I Been Pwned API v3", url: "https://haveibeenpwned.com/API/v3", category: "Reference", note: "Auth via API key header. Rate limit 1 req / 1.5s on free tier.", by: "kuldeep", date: now },
       { id: uid(), projectId: "breachly", title: "HIBP k-anonymity (Pwned Passwords)", url: "https://www.troyhunt.com/ive-just-launched-pwned-passwords-version-2/", category: "Reference", note: "Send first 5 chars of SHA-1; server returns suffixes. Never sends full password.", by: "kuldeep", date: now },
       { id: uid(), projectId: "breachly", title: "RevenueCat Expo / RN SDK", url: "https://www.revenuecat.com/docs/getting-started/installation/reactnative", category: "Reference", note: "react-native-purchases. Needs Dev Client — not Expo Go.", by: "kuldeep", date: now },
     ],
     activity: [
       { id: uid(), projectId: "shiva", user: "system", action: "Project created", time: now },
+      { id: uid(), projectId: "rudra", user: "system", action: "Project created", time: now },
       { id: uid(), projectId: "breachly", user: "system", action: "Project created", time: now },
     ],
   };
