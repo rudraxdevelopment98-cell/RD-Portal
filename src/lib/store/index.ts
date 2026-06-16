@@ -1,4 +1,4 @@
-import type { Store } from "../types";
+import type { Store as IStore } from "../types";
 import { LocalStore } from "./local";
 import { makeSupabaseStore } from "./supabase";
 
@@ -21,7 +21,7 @@ function resolveConfig() {
   };
 }
 
-let store: Store;
+let store: IStore;
 const cfg = resolveConfig();
 if (cfg.url && cfg.key) {
   try {

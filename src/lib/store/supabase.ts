@@ -77,9 +77,9 @@ export function makeSupabaseStore(url: string, key: string): Store {
       ]);
       return {
         users: (u.data || []).map(rU),
-        projects: (pr.data || []).map((x: any) => ({ id: x.id, name: x.name, key: x.key, color: x.color, desc: x.descr, phases: x.phases || DEFAULT_PHASES(), repo: x.repo || undefined, created: Date.parse(x.created_at) })),
+        projects: (pr.data || []).map((x: any) => ({ id: x.id, name: x.name, key: x.key, color: x.color, desc: x.descr, phases: x.phases || DEFAULT_PHASES(), repo: x.repo || undefined, techStack: x.tech_stack || undefined, repoTree: x.repo_tree || undefined, contributors: x.contributors || undefined, fileCount: x.file_count ?? undefined, defaultBranch: x.default_branch || undefined, lastSynced: x.last_synced ? Date.parse(x.last_synced) : undefined, created: Date.parse(x.created_at) })),
         members: (m.data || []).map((x: any) => ({ id: x.id, username: x.username, projectId: x.project_id, role: x.role, access: x.access || [] })),
-        tasks: (t.data || []).map((x: any) => ({ id: x.id, projectId: x.project_id, title: x.title, desc: x.descr, assignee: x.assignee, due: x.due, priority: x.priority, status: x.status, phase: x.phase || "P0", created: Date.parse(x.created_at) })),
+        tasks: (t.data || []).map((x: any) => ({ id: x.id, projectId: x.project_id, title: x.title, desc: x.descr, assignee: x.assignee, due: x.due, priority: x.priority, status: x.status, phase: x.phase || "P0", source: x.source || "manual", ghNumber: x.gh_number ?? undefined, created: Date.parse(x.created_at) })),
         docs: (d.data || []).map((x: any) => ({ id: x.id, projectId: x.project_id, name: x.name, category: x.category, size: x.size, data: x.url, by: x.uploaded_by, date: Date.parse(x.created_at) })),
         research: (r.data || []).map((x: any) => ({ id: x.id, projectId: x.project_id, title: x.title, url: x.url, category: x.category, note: x.note, by: x.created_by, date: Date.parse(x.created_at) })),
         activity: (a.data || []).map((x: any) => ({ id: x.id, projectId: x.project_id, user: x.actor, action: x.action, time: Date.parse(x.created_at) })),
@@ -105,6 +105,12 @@ export function makeSupabaseStore(url: string, key: string): Store {
       if (patch.desc) p.descr = patch.desc;
       if (patch.phases) p.phases = patch.phases;
       if (patch.repo !== undefined) p.repo = patch.repo;
+      if (patch.techStack !== undefined) p.tech_stack = patch.techStack;
+      if (patch.repoTree !== undefined) p.repo_tree = patch.repoTree;
+      if (patch.contributors !== undefined) p.contributors = patch.contributors;
+      if (patch.fileCount !== undefined) p.file_count = patch.fileCount;
+      if (patch.defaultBranch !== undefined) p.default_branch = patch.defaultBranch;
+      if (patch.lastSynced !== undefined) p.last_synced = new Date(patch.lastSynced).toISOString();
       await sb.from("projects").update(p).eq("id", id);
     },
 
@@ -137,7 +143,7 @@ export function makeSupabaseStore(url: string, key: string): Store {
     },
 
     async createTask(o: any) {
-      await sb.from("tasks").insert({ title: o.title, descr: o.desc, assignee: o.assignee, due: o.due, priority: o.priority, status: "To do", phase: o.phase || "P0", project_id: _active });
+      await sb.from("tasks").insert({ title: o.title, descr: o.desc, assignee: o.assignee, due: o.due, priority: o.priority, status: o.status || "To do", phase: o.phase || "P0", source: o.source || "manual", gh_number: o.ghNumber ?? null, project_id: _active });
     },
 
     async updateTask(id: string, patch: any) {

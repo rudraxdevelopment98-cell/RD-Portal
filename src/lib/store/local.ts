@@ -7,9 +7,8 @@ type DB = PortalState & { firstRun: boolean; session: string | null; active: str
 
 const KEY = "rd_portal_v1";
 
-export const LocalStore: Store = {
-  mode: "local",
-  // @ts-expect-error internal handle
+const LocalStoreImpl = {
+  mode: "local" as const,
   db: null as DB | null,
 
   _load(this: any): DB {
@@ -167,4 +166,6 @@ export const LocalStore: Store = {
     localStorage.removeItem(KEY);
     this._seed();
   },
-} as Store;
+};
+
+export const LocalStore = LocalStoreImpl as unknown as Store;

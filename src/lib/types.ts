@@ -32,7 +32,27 @@ export interface Project {
   desc: string;
   phases: Phase[];
   repo?: string; // "owner/name" for GitHub sync
+  techStack?: string[];
+  repoTree?: TreeNode | null;
+  contributors?: Contributor[];
+  fileCount?: number;
+  defaultBranch?: string;
+  lastSynced?: number;
   created: number;
+}
+
+export interface TreeNode {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  children?: TreeNode[];
+}
+
+export interface Contributor {
+  login: string;
+  avatar: string;
+  contributions: number;
+  url: string;
 }
 
 export interface Member {
@@ -54,6 +74,8 @@ export interface Task {
   priority: Priority;
   status: TaskStatus;
   phase: string;
+  source?: "manual" | "github";
+  ghNumber?: number; // GitHub issue number when source === "github"
   created: number;
 }
 

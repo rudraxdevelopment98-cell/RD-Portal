@@ -14,6 +14,7 @@ export const SECTIONS: Section[] = [
   { id: "mywork", label: "My Work", ic: "◈", global: true },
   { id: "dashboard", label: "Dashboard", ic: "▦" },
   { id: "roadmap", label: "Roadmap", ic: "◎" },
+  { id: "structure", label: "Structure", ic: "❖" },
   { id: "tasks", label: "Tasks", ic: "✓" },
   { id: "documents", label: "Documents", ic: "▤" },
   { id: "research", label: "Research", ic: "⌕" },
@@ -28,10 +29,10 @@ export const ALLSEC = PROJECT_SECTIONS.slice();
 
 export const ROLES: Record<Role, { all?: boolean; access?: string[] }> = {
   Owner: { all: true },
-  Admin: { access: ["dashboard", "roadmap", "tasks", "documents", "research", "activity", "members"] },
-  Manager: { access: ["dashboard", "roadmap", "tasks", "documents", "research", "activity"] },
-  Member: { access: ["dashboard", "roadmap", "tasks", "documents", "research"] },
-  Viewer: { access: ["dashboard", "roadmap", "documents", "research"] },
+  Admin: { access: ["dashboard", "roadmap", "structure", "tasks", "documents", "research", "activity", "members"] },
+  Manager: { access: ["dashboard", "roadmap", "structure", "tasks", "documents", "research", "activity"] },
+  Member: { access: ["dashboard", "roadmap", "structure", "tasks", "documents", "research"] },
+  Viewer: { access: ["dashboard", "roadmap", "structure", "documents", "research"] },
 };
 
 export function accessForRole(role: Role): string[] {

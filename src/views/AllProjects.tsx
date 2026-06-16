@@ -5,10 +5,14 @@ import Modal from "../components/Modal";
 import { PCOLORS } from "../lib/roles";
 import { Store } from "../lib/store";
 import type { NewProjectInput } from "../lib/types";
+import AddFromGitHub from "../components/AddFromGitHub";
+import TokenSettings from "../components/TokenSettings";
 
 export default function AllProjects() {
   const { state, isPlatformAdmin, switchProject, go, reload } = usePortal();
   const [creating, setCreating] = useState(false);
+  const [ghOpen, setGhOpen] = useState(false);
+  const [tokenOpen, setTokenOpen] = useState(false);
   const [form, setForm] = useState<NewProjectInput>({ name: "", key: "", color: PCOLORS[0], desc: "", repo: "" });
 
   if (!isPlatformAdmin) return <EmptyState icon="🔒" message="Platform admin only." />;
@@ -39,7 +43,8 @@ export default function AllProjects() {
       <div className="page-h">
         <div><h1>All Projects</h1><p>Create and manage every project + accounts.</p></div>
         <div className="actions">
-          <button className="btn primary" onClick={() => setCreating(true)}>+ New project</button>
+          <button className="btn ghost" onClick={() => setCreating(true)}>+ Manual</button>
+          <button className="btn primary" onClick={() => setGhOpen(true)}>⎇ Add from GitHub</button>
         </div>
       </div>
 
@@ -120,6 +125,16 @@ export default function AllProjects() {
           </div>
         </Modal>
       )}
+
+      {ghOpen && (
+        <AddFromGitHub
+          onClose={() => setGhOpen(false)}
+          onDone={(id) => { setGhOpen(false); switchProject(id); go("structure"); }}
+          onNeedToken={() => { setGhOpen(false); setTokenOpen(true); }}
+        />
+      )}
+
+      {tokenOpen && <TokenSettings onClose={() => setTokenOpen(false)} />}
     </>
   );
 }

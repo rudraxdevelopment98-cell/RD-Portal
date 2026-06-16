@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { usePortal } from "../context/PortalContext";
 import { SECTIONS } from "../lib/roles";
 import Avatar from "./Avatar";
+import TokenSettings from "./TokenSettings";
+import { hasToken } from "../lib/github";
 import viewFor from "../views";
 
 /* Mobile bottom-nav items — the 5 most important */
@@ -8,6 +11,7 @@ const MOB_NAV = ["portfolio", "mywork", "tasks", "dashboard", "profile"];
 
 export default function Shell() {
   const { state, me, proj, myRole, myProjects, isPlatformAdmin, can, go, switchProject, logout } = usePortal();
+  const [tokenOpen, setTokenOpen] = useState(false);
   if (!me) return null;
 
   const route = state.route;
@@ -119,6 +123,12 @@ export default function Shell() {
           <div className="search">
             <input placeholder="Search…" />
           </div>
+          <div
+            className="iBtn"
+            title={hasToken() ? "GitHub token connected" : "Connect GitHub token"}
+            onClick={() => setTokenOpen(true)}
+            style={hasToken() ? { color: "var(--sage)", borderColor: "rgba(127,209,168,.4)" } : undefined}
+          >⎇</div>
         </div>
 
         <div className="content">
@@ -145,6 +155,8 @@ export default function Shell() {
           );
         })}
       </nav>
+
+      {tokenOpen && <TokenSettings onClose={() => setTokenOpen(false)} />}
     </div>
   );
 }

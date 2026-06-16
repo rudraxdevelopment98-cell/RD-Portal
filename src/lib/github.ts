@@ -1,9 +1,62 @@
 /* ============================================================
-   GitHub sync — unauthenticated reads of public repos.
-   Used to reflect real project progress in the portal.
-   (60 req/hr unauth limit; results cached in sessionStorage.)
+   GitHub integration — repo analysis, auto-onboarding, sync.
+   Phase 1 (heuristic): metadata, tech stack, file tree, issues
+   → tasks, milestones → phases, contributors, commits.
+   Reads public repos unauthenticated (~60/hr); a personal access
+   token (stored locally) enables private repos + 5,000/hr.
    ============================================================ */
+import type { Contributor, Phase, TreeNode } from "./types";
+import { normalizeRepo } from "./util";
 
+export { normalizeRepo };
+
+const TOKEN_KEY = "rd_gh_token";
+const CACHE_PREFIX = "rd_gh_";
+const TTL = 10 * 60 * 1000;
+
+/* ---------- token ---------- */
+export function getToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+export function setToken(t: string | null) {
+  try {
+    if (t && t.trim()) localStorage.setItem(TOKEN_KEY, t.trim());
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* ignore */ }
+}
+export function hasToken(): boolean {
+  return !!getToken();
+}
+
+function headers(): HeadersInit {
+  const h: Record<string, string> = { Accept: "application/vnd.github+json" };
+  const t = getToken();
+  if (t) h.Authorization = `Bearer ${t}`;
+  return h;
+}
+
+async function gh(path: string): Promise<any> {
+  const res = await fetch(`https://api.github.com${path}`, { headers: headers() });
+  if (!res.ok) {
+    if (res.status === 404) throw new Error("Repo not found (or private without a token).");
+    if (res.status === 403) throw new Error("GitHub rate limit reached — add a token in Settings, or wait.");
+    if (res.status === 401) throw new Error("GitHub token is invalid.");
+    throw new Error(`GitHub returned ${res.status}.`);
+  }
+  return res.json();
+}
+
+async function ghRaw(repo: string, path: string): Promise<string | null> {
+  try {
+    const data = await gh(`/repos/${repo}/contents/${path}`);
+    if (data && data.content) return atob(data.content.replace(/\n/g, ""));
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/* ---------- lightweight snapshot (commits / issue count) ---------- */
 export interface RepoSnapshot {
   repo: string;
   description: string | null;
@@ -12,54 +65,28 @@ export interface RepoSnapshot {
   pushedAt: string | null;
   language: string | null;
   commits: { message: string; author: string; date: string; sha: string; url: string }[];
-  issues: { number: number; title: string; url: string; state: string; createdAt: string }[];
   error?: string;
 }
 
-const CACHE_PREFIX = "rd_gh_";
-const TTL = 10 * 60 * 1000; // 10 minutes
-
-function readCache(repo: string): RepoSnapshot | null {
+function readCache<T>(key: string): T | null {
   try {
-    const raw = sessionStorage.getItem(CACHE_PREFIX + repo);
+    const raw = sessionStorage.getItem(CACHE_PREFIX + key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
     if (Date.now() - ts > TTL) return null;
     return data;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
-
-function writeCache(repo: string, data: RepoSnapshot) {
-  try {
-    sessionStorage.setItem(CACHE_PREFIX + repo, JSON.stringify({ ts: Date.now(), data }));
-  } catch {
-    /* quota — ignore */
-  }
-}
-
-async function gh(path: string): Promise<any> {
-  const res = await fetch(`https://api.github.com${path}`, {
-    headers: { Accept: "application/vnd.github+json" },
-  });
-  if (!res.ok) {
-    const msg = res.status === 403 ? "GitHub rate limit reached — try again shortly." : `GitHub returned ${res.status}.`;
-    throw new Error(msg);
-  }
-  return res.json();
+function writeCache(key: string, data: unknown) {
+  try { sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ ts: Date.now(), data })); } catch { /* ignore */ }
 }
 
 export async function fetchRepoSnapshot(repo: string, force = false): Promise<RepoSnapshot> {
-  if (!force) {
-    const cached = readCache(repo);
-    if (cached) return cached;
-  }
+  if (!force) { const c = readCache<RepoSnapshot>("snap_" + repo); if (c) return c; }
   try {
-    const [meta, commits, issues] = await Promise.all([
+    const [meta, commits] = await Promise.all([
       gh(`/repos/${repo}`),
       gh(`/repos/${repo}/commits?per_page=5`).catch(() => []),
-      gh(`/repos/${repo}/issues?state=open&per_page=5`).catch(() => []),
     ]);
     const snap: RepoSnapshot = {
       repo,
@@ -75,29 +102,187 @@ export async function fetchRepoSnapshot(repo: string, force = false): Promise<Re
         sha: (c.sha || "").slice(0, 7),
         url: c.html_url || "",
       })),
-      issues: (Array.isArray(issues) ? issues : [])
-        .filter((i: any) => !i.pull_request)
-        .map((i: any) => ({
-          number: i.number,
-          title: i.title,
-          url: i.html_url,
-          state: i.state,
-          createdAt: i.created_at,
-        })),
     };
-    writeCache(repo, snap);
+    writeCache("snap_" + repo, snap);
     return snap;
   } catch (e: any) {
+    return { repo, description: null, openIssues: 0, stars: 0, pushedAt: null, language: null, commits: [], error: e?.message || "Could not reach GitHub." };
+  }
+}
+
+/* ---------- full analysis (for onboarding + sync) ---------- */
+export interface ImportedTask { ghNumber: number; title: string; body: string; state: "open" | "closed"; labels: string[]; url: string }
+
+export interface RepoAnalysis {
+  repo: string;
+  name: string;
+  description: string;
+  defaultBranch: string;
+  language: string | null;
+  topics: string[];
+  stars: number;
+  pushedAt: string | null;
+  techStack: string[];
+  tree: TreeNode;
+  fileCount: number;
+  tasks: ImportedTask[];
+  phases: Phase[];
+  contributors: Contributor[];
+  error?: string;
+}
+
+/* detect tech stack from file paths + package.json deps */
+function detectStack(paths: string[], pkg: any): string[] {
+  const set = new Set<string>();
+  const has = (re: RegExp) => paths.some((p) => re.test(p));
+  const ext = (e: string) => paths.filter((p) => p.endsWith(e)).length;
+
+  if (pkg) {
+    const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    const d = (n: string) => Object.prototype.hasOwnProperty.call(deps, n);
+    if (d("expo") || d("expo-router")) set.add("Expo");
+    if (d("react-native")) set.add("React Native");
+    if (d("next")) set.add("Next.js");
+    if (d("react") && !d("react-native")) set.add("React");
+    if (d("vue")) set.add("Vue");
+    if (d("svelte")) set.add("Svelte");
+    if (d("@angular/core")) set.add("Angular");
+    if (d("express") || d("fastify") || d("koa")) set.add("Node API");
+    if (d("@supabase/supabase-js")) set.add("Supabase");
+    if (d("react-native-purchases")) set.add("RevenueCat");
+    if (d("typescript") || ext(".ts") + ext(".tsx") > 0) set.add("TypeScript");
+    if (!set.has("TypeScript")) set.add("JavaScript");
+  }
+  if (has(/(^|\/)requirements\.txt$/) || has(/(^|\/)pyproject\.toml$/) || ext(".py") > 0) set.add("Python");
+  if (has(/(^|\/)go\.mod$/)) set.add("Go");
+  if (has(/(^|\/)Cargo\.toml$/)) set.add("Rust");
+  if (has(/(^|\/)pubspec\.yaml$/)) set.add("Flutter");
+  if (has(/(^|\/)Gemfile$/)) set.add("Ruby");
+  if (has(/(^|\/)composer\.json$/)) set.add("PHP");
+  if (has(/(^|\/)(pom\.xml|build\.gradle)$/)) set.add("Java/Kotlin");
+  if (has(/(^|\/)Dockerfile$/i)) set.add("Docker");
+  if (has(/^supabase\//)) set.add("Supabase");
+  if (has(/^\.github\/workflows\//)) set.add("GitHub Actions");
+  return [...set];
+}
+
+/* build a nested tree (capped) from flat git-tree paths */
+function buildTree(paths: { path: string; type: string }[], maxDepth = 2, maxChildren = 40): { tree: TreeNode; count: number } {
+  const root: TreeNode = { name: "/", path: "", type: "dir", children: [] };
+  let count = 0;
+  for (const item of paths) {
+    count++;
+    const parts = item.path.split("/");
+    if (parts.length > maxDepth + 1) continue; // cap depth for diagram clarity
+    let node = root;
+    for (let i = 0; i < parts.length; i++) {
+      const isLast = i === parts.length - 1;
+      const name = parts[i];
+      node.children = node.children || [];
+      let child = node.children.find((c) => c.name === name);
+      if (!child) {
+        child = { name, path: parts.slice(0, i + 1).join("/"), type: isLast && item.type === "blob" ? "file" : "dir", children: [] };
+        node.children.push(child);
+      }
+      node = child;
+    }
+  }
+  // sort: dirs first, then files; cap children per node
+  const sortNode = (n: TreeNode) => {
+    if (!n.children) return;
+    n.children.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
+    if (n.children.length > maxChildren) n.children = n.children.slice(0, maxChildren);
+    n.children.forEach(sortNode);
+  };
+  sortNode(root);
+  return { tree: root, count };
+}
+
+/* milestones → phases; falls back to a default if none */
+function milestonesToPhases(milestones: any[]): Phase[] {
+  if (!milestones.length) return [];
+  const sorted = milestones
+    .slice()
+    .sort((a, b) => {
+      const ad = a.due_on ? Date.parse(a.due_on) : Infinity;
+      const bd = b.due_on ? Date.parse(b.due_on) : Infinity;
+      return ad - bd || a.number - b.number;
+    });
+  let activeMarked = false;
+  return sorted.map((m, i) => {
+    const done = m.state === "closed";
+    let status: Phase["status"] = "";
+    if (done) status = "done";
+    else if (!activeMarked) { status = "active"; activeMarked = true; }
+    return { num: String(i + 1), label: `Phase ${i + 1}`, name: m.title, status };
+  });
+}
+
+export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
+  const repo = normalizeRepo(repoInput)!;
+  try {
+    const meta = await gh(`/repos/${repo}`);
+    const branch = meta.default_branch || "main";
+
+    const [treeData, issues, milestones, contributors] = await Promise.all([
+      gh(`/repos/${repo}/git/trees/${branch}?recursive=1`).catch(() => ({ tree: [] })),
+      gh(`/repos/${repo}/issues?state=all&per_page=30`).catch(() => []),
+      gh(`/repos/${repo}/milestones?state=all&per_page=20`).catch(() => []),
+      gh(`/repos/${repo}/contributors?per_page=10`).catch(() => []),
+    ]);
+
+    const rawPaths: { path: string; type: string }[] = (treeData.tree || []).map((t: any) => ({ path: t.path, type: t.type }));
+    const allPaths = rawPaths.map((p) => p.path);
+
+    // read package.json if present (root)
+    let pkg: any = null;
+    if (allPaths.includes("package.json")) {
+      const txt = await ghRaw(repo, "package.json");
+      if (txt) { try { pkg = JSON.parse(txt); } catch { /* ignore */ } }
+    }
+
+    const techStack = detectStack(allPaths, pkg);
+    const { tree, count } = buildTree(rawPaths);
+
+    const tasks: ImportedTask[] = (Array.isArray(issues) ? issues : [])
+      .filter((i: any) => !i.pull_request)
+      .map((i: any) => ({
+        ghNumber: i.number,
+        title: i.title,
+        body: (i.body || "").slice(0, 400),
+        state: i.state,
+        labels: (i.labels || []).map((l: any) => (typeof l === "string" ? l : l.name)),
+        url: i.html_url,
+      }));
+
+    const phases = milestonesToPhases(Array.isArray(milestones) ? milestones : []);
+
+    const contribs: Contributor[] = (Array.isArray(contributors) ? contributors : [])
+      .filter((c: any) => c.type === "User")
+      .map((c: any) => ({ login: c.login, avatar: c.avatar_url, contributions: c.contributions, url: c.html_url }));
+
     return {
       repo,
-      description: null,
-      openIssues: 0,
-      stars: 0,
-      pushedAt: null,
-      language: null,
-      commits: [],
-      issues: [],
-      error: e?.message || "Could not reach GitHub.",
+      name: meta.name,
+      description: meta.description || "",
+      defaultBranch: branch,
+      language: meta.language ?? null,
+      topics: meta.topics || [],
+      stars: meta.stargazers_count ?? 0,
+      pushedAt: meta.pushed_at ?? null,
+      techStack,
+      tree,
+      fileCount: count,
+      tasks,
+      phases,
+      contributors: contribs,
+    };
+  } catch (e: any) {
+    return {
+      repo, name: repo.split("/")[1] || repo, description: "", defaultBranch: "main",
+      language: null, topics: [], stars: 0, pushedAt: null, techStack: [],
+      tree: { name: "/", path: "", type: "dir", children: [] }, fileCount: 0,
+      tasks: [], phases: [], contributors: [], error: e?.message || "Could not analyze repo.",
     };
   }
 }

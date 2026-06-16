@@ -6,11 +6,14 @@ import { priorityChip, statusChip } from "../components/Chip";
 import Avatar from "../components/Avatar";
 import { Store } from "../lib/store";
 import { today } from "../lib/util";
+import type { Priority } from "../lib/types";
 
 export default function Tasks() {
   const { state, proj, isManager, inProj, assigneeName, reload } = usePortal();
   const [newTask, setNewTask] = useState(false);
-  const [form, setForm] = useState({ title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" });
+  const [form, setForm] = useState<{ title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string }>(
+    { title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" }
+  );
 
   if (!proj) return <EmptyState icon="✓" message="No project selected." />;
 

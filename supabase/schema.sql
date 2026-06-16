@@ -15,16 +15,30 @@ create table if not exists profiles (
 );
 
 create table if not exists projects (
-  id         text primary key,           -- short slug, e.g. 'shiva'
-  name       text not null,
-  key        text,
-  color      text,
-  descr      text,
-  phases     jsonb,                       -- custom roadmap: [{num,label,name,status}]
-  created_at timestamptz not null default now()
+  id             text primary key,           -- short slug, e.g. 'shiva'
+  name           text not null,
+  key            text,
+  color          text,
+  descr          text,
+  phases         jsonb,                       -- custom roadmap: [{num,label,name,status}]
+  repo           text,                        -- "owner/name" for GitHub sync
+  tech_stack     text[],                      -- detected stack
+  repo_tree      jsonb,                       -- cached file-structure diagram
+  contributors   jsonb,                       -- [{login,avatar,contributions,url}]
+  file_count     int,
+  default_branch text,
+  last_synced    timestamptz,
+  created_at     timestamptz not null default now()
 );
--- migration for existing installs:
+-- migrations for existing installs:
 alter table projects add column if not exists phases jsonb;
+alter table projects add column if not exists repo text;
+alter table projects add column if not exists tech_stack text[];
+alter table projects add column if not exists repo_tree jsonb;
+alter table projects add column if not exists contributors jsonb;
+alter table projects add column if not exists file_count int;
+alter table projects add column if not exists default_branch text;
+alter table projects add column if not exists last_synced timestamptz;
 
 create table if not exists members (
   id         uuid primary key default gen_random_uuid(),
@@ -41,8 +55,11 @@ create table if not exists tasks (
   project_id text references projects(id) on delete cascade,
   title      text not null, descr text, assignee text, due date,
   priority   text default 'Medium', status text default 'To do', phase text default 'P0',
+  source     text default 'manual', gh_number int,   -- GitHub issue link
   created_at timestamptz not null default now()
 );
+alter table tasks add column if not exists source text default 'manual';
+alter table tasks add column if not exists gh_number int;
 create table if not exists documents (
   id uuid primary key default gen_random_uuid(), project_id text references projects(id) on delete cascade,
   name text not null, category text, size text, url text, uploaded_by text, created_at timestamptz not null default now());

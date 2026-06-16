@@ -3,6 +3,7 @@ import Portfolio from "./Portfolio";
 import MyWork from "./MyWork";
 import Dashboard from "./Dashboard";
 import Roadmap from "./Roadmap";
+import Structure from "./Structure";
 import Tasks from "./Tasks";
 import Documents from "./Documents";
 import Research from "./Research";
@@ -16,6 +17,7 @@ const VIEW_MAP: Record<string, ComponentType> = {
   mywork: MyWork,
   dashboard: Dashboard,
   roadmap: Roadmap,
+  structure: Structure,
   tasks: Tasks,
   documents: Documents,
   research: Research,
