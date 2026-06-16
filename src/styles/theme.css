@@ -849,6 +849,45 @@ table.tbl tr:hover td {
 
 .dflow-ops { margin-top: 18px; }
 
+/* database schema */
+.db-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;
+}
+.db-table {
+  background: var(--ink-2); border: 1px solid var(--line-soft);
+  border-radius: 10px; overflow: hidden;
+}
+.db-table-name {
+  background: var(--panel-2); padding: 8px 12px;
+  font-weight: 700; font-size: 12.5px; color: var(--sage);
+  border-bottom: 1px solid var(--line-soft); font-family: var(--mono);
+}
+.db-cols { padding: 4px 0; }
+.db-col {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 12px; font-size: 11.5px; gap: 8px;
+}
+.db-col:not(:last-child) { border-bottom: 1px solid rgba(255,255,255,.03); }
+.db-col-name { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.db-col-type { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.db-key {
+  font-family: var(--mono); font-size: 8.5px; font-weight: 700;
+  padding: 1px 4px; border-radius: 3px; letter-spacing: .04em;
+}
+.db-key.pk { background: rgba(232,197,106,.18); color: var(--gold); }
+.db-key.fk { background: rgba(127,209,168,.18); color: var(--sage); }
+.db-rel {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11px;
+}
+.db-rel-from { color: var(--coral); }
+.db-rel-arrow { color: var(--faint); }
+.db-rel-to { color: var(--sage); }
+
+@media (max-width: 768px) {
+  .db-grid { grid-template-columns: 1fr; }
+}
+
 /* ── building structure ── */
 .bstruct { }
 .bstruct-core { margin-bottom: 20px; }

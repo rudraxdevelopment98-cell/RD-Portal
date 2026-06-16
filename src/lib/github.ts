@@ -221,6 +221,24 @@ function milestonesToPhases(milestones: any[]): Phase[] {
   });
 }
 
+/* Choose the most representative DB schema file from the repo paths. */
+function pickSchemaPath(paths: string[]): string | null {
+  const prefs = [
+    /^supabase\/schema\.sql$/i,
+    /^prisma\/schema\.prisma$/i,
+    /(^|\/)schema\.prisma$/i,
+    /(^|\/)schema\.sql$/i,
+    /^supabase\/migrations\/.*\.sql$/i,
+    /(^|\/)migrations\/.*\.sql$/i,
+    /(^|\/)db\/.*\.sql$/i,
+  ];
+  for (const re of prefs) {
+    const hits = paths.filter((p) => re.test(p));
+    if (hits.length) return hits.sort().pop()!; // latest migration / first match
+  }
+  return null;
+}
+
 export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
   const repo = normalizeRepo(repoInput)!;
   try {
@@ -246,6 +264,14 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
     const readmePath = allPaths.find((p) => /^readme(\.md|\.markdown|\.txt)?$/i.test(p)) || "README.md";
     const readme = await ghRaw(repo, readmePath);
 
+    // locate a DB schema to draw tables + relations from
+    const schemaPath = pickSchemaPath(allPaths);
+    let schema: { content: string; path: string } | null = null;
+    if (schemaPath) {
+      const content = await ghRaw(repo, schemaPath);
+      if (content) schema = { content, path: schemaPath };
+    }
+
     const techStack = detectStack(allPaths, pkg);
     const { tree, count } = buildTree(rawPaths);
     const topDirs = (tree.children || []).filter((c) => c.type === "dir").map((c) => c.name);
@@ -257,6 +283,7 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
       pkg,
       techStack,
       language: meta.language ?? null,
+      schema,
     });
 
     const tasks: ImportedTask[] = (Array.isArray(issues) ? issues : [])
@@ -300,7 +327,7 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
       language: null, topics: [], stars: 0, pushedAt: null, techStack: [],
       tree: { name: "/", path: "", type: "dir", children: [] }, fileCount: 0,
       tasks: [], phases: [], contributors: [], readme: null,
-      blueprint: { kind: "", idea: "", purpose: [], layers: [], pipeline: [], edges: [], externals: [], ops: [] },
+      blueprint: { kind: "", idea: "", purpose: [], layers: [], pipeline: [], edges: [], externals: [], ops: [], tables: [], relations: [] },
       error: e?.message || "Could not analyze repo.",
     };
   }

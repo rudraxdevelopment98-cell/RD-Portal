@@ -284,6 +284,9 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
         </div>
       )}
 
+      {/* Database tables + relations */}
+      {(bp.tables?.length ?? 0) > 0 && <DatabaseSchema tables={bp.tables} relations={bp.relations ?? []} />}
+
       {/* Ops strip */}
       {ops.length > 0 && (
         <div className="dflow-ops">
@@ -294,6 +297,51 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
                 <span style={{ color: "var(--sage)" }}>{o.icon}</span>
                 <b>{o.label}</b>
                 <span style={{ color: "var(--faint)" }}>· {o.detail}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Database schema — tables, columns (PK/FK), and relations. */
+function DatabaseSchema({ tables, relations }: { tables: import("../lib/blueprint").TableInfo[]; relations: import("../lib/blueprint").Relation[] }) {
+  return (
+    <div className="dbschema">
+      <div className="inv-section-label" style={{ margin: "20px 0 12px" }}>
+        Database — {tables.length} table{tables.length !== 1 ? "s" : ""}{relations.length ? `, ${relations.length} relation${relations.length !== 1 ? "s" : ""}` : ""}
+      </div>
+      <div className="db-grid">
+        {tables.map((t) => (
+          <div key={t.name} className="db-table">
+            <div className="db-table-name">▤ {t.name}</div>
+            <div className="db-cols">
+              {t.columns.map((c) => (
+                <div key={c.name} className="db-col">
+                  <span className="db-col-name">
+                    {c.pk && <span className="db-key pk" title="primary key">PK</span>}
+                    {c.fk && <span className="db-key fk" title={`→ ${c.fk.table}.${c.fk.column}`}>FK</span>}
+                    {c.name}
+                  </span>
+                  <span className="db-col-type">{c.type}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {relations.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div className="inv-section-label" style={{ marginBottom: 8 }}>Connections</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {relations.map((r, i) => (
+              <div key={i} className="db-rel">
+                <span className="db-rel-from">{r.from}.{r.fromCol}</span>
+                <span className="db-rel-arrow">→</span>
+                <span className="db-rel-to">{r.to}.{r.toCol}</span>
               </div>
             ))}
           </div>
