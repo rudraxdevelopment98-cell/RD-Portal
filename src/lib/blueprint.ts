@@ -152,8 +152,15 @@ function buildFlow(input: {
   }
 
   // data
-  if (hasSupabase) pipeline.push({ id: "data", label: "Supabase", detail: "Postgres · Auth · Storage · RLS", icon: "▤" });
-  else if (hasDb) pipeline.push({ id: "data", label: "Database", detail: depHas(pkg, "prisma") ? "Prisma ORM" : "SQL", icon: "▤" });
+  if (hasSupabase) {
+    const hasStorage = /supabase\.storage|\.storage\.from\(/.test(text) || allPaths.some((p) => /storage/i.test(p));
+    const hasRealtime = /\.channel\(|supabase\.realtime|postgres_changes/.test(text);
+    const parts = ["Postgres", "Auth"];
+    if (hasStorage) parts.push("Storage");
+    if (hasRealtime) parts.push("Realtime");
+    parts.push("RLS");
+    pipeline.push({ id: "data", label: "Supabase", detail: parts.join(" · "), icon: "▤" });
+  } else if (hasDb) pipeline.push({ id: "data", label: "Database", detail: depHas(pkg, "prisma") ? "Prisma ORM" : "SQL", icon: "▤" });
 
   // edges — infer what data flows on each hop
   const isMobile = s.has("Expo") || s.has("React Native");
@@ -161,15 +168,15 @@ function buildFlow(input: {
   if (pipeline[0] && pipeline[1]) {
     // client → server/data
     const reqLabel = hasHibp ? "email address / SHA-1 prefix" :
-      hasSupabase ? "HTTPS + JWT token" : "HTTP request";
-    const resLabel = hasHibp ? "breach list / password match" :
-      hasSupabase ? "JSON rows + RLS-filtered" : "JSON response";
+      hasSupabase ? "Supabase JS call (auth token + Postgrest query)" : "HTTP request";
+    const resLabel = hasHibp ? "breach count / pwned-password match" :
+      hasSupabase ? "JSON rows, scoped by Row-Level Security policy" : "JSON response";
     edges.push({ from: pipeline[0].id, to: pipeline[1].id, label: `→ ${reqLabel}` });
     edges.push({ from: pipeline[1].id, to: pipeline[0].id, label: `← ${resLabel}` });
   }
   if (pipeline[1]?.id === "server" && pipeline[2]) {
-    const dbIn = hasHibp ? "k-anon prefix query" : hasSupabase ? "SQL query + JWT" : "SQL query";
-    const dbOut = hasHibp ? "matching breach records" : hasSupabase ? "rows (RLS enforced)" : "result set";
+    const dbIn = hasHibp ? "k-anonymity prefix query (first 5 SHA-1 chars)" : hasSupabase ? "SQL query carrying the user's JWT (auth.uid())" : "SQL query";
+    const dbOut = hasHibp ? "matching breach hash suffixes" : hasSupabase ? "rows filtered by RLS policy" : "result set";
     edges.push({ from: "server", to: pipeline[2].id, label: `→ ${dbIn}` });
     edges.push({ from: pipeline[2].id, to: "server", label: `← ${dbOut}` });
   }
@@ -183,24 +190,31 @@ function buildFlow(input: {
   const serverOrClient = (pipeline.find((n) => n.id === "server") ? "server" : "client");
   const clientNode = pipeline.find((n) => n.id === "client")?.id || "client";
 
+  if (hasSupabase) {
+    addExt({ id: "supabase-auth", label: "Supabase Auth", detail: "OAuth (Google / GitHub) + JWT session issuance", connectsTo: clientNode, flowIn: "OAuth sign-in redirect", flowOut: "JWT access + refresh token" });
+    if (/supabase\.storage|\.storage\.from\(/.test(text) || allPaths.some((p) => /storage/i.test(p)))
+      addExt({ id: "supabase-storage", label: "Supabase Storage", detail: "S3-compatible object storage with RLS-backed buckets", connectsTo: serverOrClient, flowIn: "file upload (multipart)", flowOut: "public / signed URL" });
+    if (/\.channel\(|supabase\.realtime|postgres_changes/.test(text))
+      addExt({ id: "supabase-realtime", label: "Supabase Realtime", detail: "WebSocket subscription to Postgres row changes", connectsTo: clientNode, flowIn: "channel subscribe (table filter)", flowOut: "INSERT / UPDATE / DELETE row events" });
+  }
   if (depHas(pkg, "react-native-purchases") || /revenuecat/.test(text))
-    addExt({ id: "revenuecat", label: "RevenueCat", detail: "In-app subscriptions & paywalls", connectsTo: clientNode, flowIn: "purchase request", flowOut: "entitlement status" });
+    addExt({ id: "revenuecat", label: "RevenueCat", detail: "Entitlements, offerings & receipt validation for in-app subscriptions", connectsTo: clientNode, flowIn: "purchase / restore request (product id)", flowOut: "CustomerInfo (active entitlements)" });
   if (depHas(pkg, "stripe") || depHas(pkg, "@stripe/stripe-js"))
-    addExt({ id: "stripe", label: "Stripe", detail: "Web payments", connectsTo: serverOrClient, flowIn: "payment intent", flowOut: "charge confirmation" });
+    addExt({ id: "stripe", label: "Stripe", detail: "PaymentIntents API + webhooks", connectsTo: serverOrClient, flowIn: "PaymentIntent / checkout session", flowOut: "charge result + webhook event" });
   if (depHas(pkg, "openai"))
-    addExt({ id: "openai", label: "OpenAI", detail: "LLM completions", connectsTo: serverOrClient, flowIn: "prompt + context", flowOut: "completion stream" });
+    addExt({ id: "openai", label: "OpenAI API", detail: "Chat/completions endpoint", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens" });
   if (depHas(pkg, "@anthropic-ai/sdk"))
-    addExt({ id: "anthropic", label: "Claude API", detail: "LLM completions", connectsTo: serverOrClient, flowIn: "prompt + context", flowOut: "completion stream" });
+    addExt({ id: "anthropic", label: "Claude API", detail: "Messages endpoint (Anthropic SDK)", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens" });
   if (depHas(pkg, "firebase"))
-    addExt({ id: "firebase", label: "Firebase", detail: "Backend services", connectsTo: serverOrClient, flowIn: "SDK call", flowOut: "realtime / auth response" });
+    addExt({ id: "firebase", label: "Firebase", detail: "Auth / Firestore / Cloud Messaging SDK", connectsTo: serverOrClient, flowIn: "SDK call (auth token / query)", flowOut: "realtime snapshot / auth result" });
   if (hasHibp) {
     const hiNode = pipeline.find((n) => n.id === "server") ? "server" : clientNode;
-    addExt({ id: "hibp", label: "HaveIBeenPwned", detail: "Breach data (k-anonymity)", connectsTo: hiNode, flowIn: "SHA-1 prefix (5 chars)", flowOut: "matching suffix list" });
+    addExt({ id: "hibp", label: "HaveIBeenPwned", detail: "Pwned Passwords API v3 — k-anonymity model, full hash never leaves the client/server", connectsTo: hiNode, flowIn: "SHA-1 prefix (first 5 hex chars)", flowOut: "list of matching suffix:count pairs" });
   }
   if (depHas(pkg, "@sentry/react-native") || depHas(pkg, "@sentry/node") || depHas(pkg, "@sentry/react"))
-    addExt({ id: "sentry", label: "Sentry", detail: "Error tracking", connectsTo: clientNode, flowIn: "error event + stack trace", flowOut: "ack" });
+    addExt({ id: "sentry", label: "Sentry", detail: "Error & performance monitoring ingest", connectsTo: clientNode, flowIn: "exception event + stack trace + breadcrumbs", flowOut: "ingest ack" });
   if (depHas(pkg, "expo-notifications") || /push notification/.test(text))
-    addExt({ id: "push", label: "Push Notifications", detail: "APNs / FCM", connectsTo: serverOrClient, flowIn: "trigger event", flowOut: "device notification" });
+    addExt({ id: "push", label: "Push Notifications", detail: "Expo push service → APNs / FCM", connectsTo: serverOrClient, flowIn: "push token + payload", flowOut: "device-delivered notification" });
 
   // ops / build
   const ops: FlowNode[] = [];
