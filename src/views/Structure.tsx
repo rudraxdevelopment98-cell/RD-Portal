@@ -212,77 +212,193 @@ export default function Structure() {
    Shows pipeline horizontally with labeled bidirectional
    edges and external services attached to their pipeline node.
 ───────────────────────────────────────────────────────── */
+/* ── Interactive data-flow canvas ──
+   Pipeline nodes + external services as draggable boxes wired together
+   with curved connection lines. Click a node or a line to see detail. */
+type FlowNode = import("../lib/blueprint").FlowNode;
+type FlowEdge = import("../lib/blueprint").FlowEdge;
+type ExtService = import("../lib/blueprint").ExtService;
+
+const FN_W = 158;
+const FN_H = 60;
+
+interface FlowConn {
+  from: string; to: string;
+  kind: "pipe" | "ext";
+  label: string;        // primary label shown / sentence
+  back?: string;        // reverse-direction label (externals)
+  fromLabel: string; toLabel: string;
+}
+
+function FlowCanvas({ pipeline, edges, externals }: { pipeline: FlowNode[]; edges: FlowEdge[]; externals: ExtService[] }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({});
+  const [activeConn, setActiveConn] = useState<number | null>(null);
+  const [activeNode, setActiveNode] = useState<string | null>(null);
+  const [hoverNode, setHoverNode] = useState<string | null>(null);
+  const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
+
+  const labelOf = (id: string) =>
+    pipeline.find((n) => n.id === id)?.label || externals.find((e) => e.id === id)?.label || id;
+
+  // build the connection list once
+  const conns: FlowConn[] = [];
+  edges.forEach((e) => conns.push({ from: e.from, to: e.to, kind: "pipe", label: e.label, fromLabel: labelOf(e.from), toLabel: labelOf(e.to) }));
+  externals.forEach((x) => conns.push({ from: x.connectsTo, to: x.id, kind: "ext", label: x.flowIn, back: x.flowOut, fromLabel: labelOf(x.connectsTo), toLabel: labelOf(x.id) }));
+
+  // initial layout: pipeline in a row, externals in a lane below their node
+  useEffect(() => {
+    setPos((prev) => {
+      if (Object.keys(prev).length) return prev;
+      const gap = FN_W + 70;
+      const next: Record<string, { x: number; y: number }> = {};
+      pipeline.forEach((n, i) => { next[n.id] = { x: 30 + i * gap, y: 36 }; });
+      const perNode: Record<string, number> = {};
+      externals.forEach((x) => {
+        const idx = Math.max(0, pipeline.findIndex((n) => n.id === x.connectsTo));
+        const stack = perNode[x.connectsTo] = (perNode[x.connectsTo] ?? -1) + 1;
+        next[x.id] = { x: 30 + idx * gap + stack * 26, y: 36 + 150 + stack * 92 };
+      });
+      return next;
+    });
+  }, [pipeline, externals]);
+
+  const onMouseDown = (e: React.MouseEvent, id: string) => {
+    const p = pos[id]; if (!p) return;
+    drag.current = { id, dx: e.clientX - p.x, dy: e.clientY - p.y, moved: false };
+  };
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!drag.current) return;
+      drag.current.moved = true;
+      const { id, dx, dy } = drag.current;
+      setPos((p) => ({ ...p, [id]: { x: Math.max(0, e.clientX - dx), y: Math.max(0, e.clientY - dy) } }));
+    };
+    const up = () => { drag.current = null; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, []);
+
+  const center = (id: string) => { const p = pos[id]; return p ? { x: p.x + FN_W / 2, y: p.y + FN_H / 2 } : null; };
+
+  const allIds = [...pipeline.map((n) => n.id), ...externals.map((e) => e.id)];
+  const canvasHeight = Math.max(300, ...allIds.map((id) => (pos[id]?.y || 0) + FN_H + 30));
+
+  const isExt = (id: string) => externals.some((e) => e.id === id);
+
+  return (
+    <div className="dbc">
+      <div className="inv-section-label" style={{ margin: "4px 0 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>Data flow — {pipeline.length} stage{pipeline.length !== 1 ? "s" : ""}{externals.length ? `, ${externals.length} external service${externals.length !== 1 ? "s" : ""}` : ""}</span>
+        <span className="dbc-hint">drag to rearrange · click a box or a line for detail</span>
+      </div>
+
+      <div className="dbc-canvas" ref={wrapRef} style={{ height: canvasHeight }}>
+        <svg className="dbc-svg" style={{ height: canvasHeight }}>
+          <defs>
+            <marker id="fc-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L7,3 L0,6 Z" fill="var(--slate)" />
+            </marker>
+          </defs>
+          {conns.map((c, i) => {
+            const a = center(c.from); const b = center(c.to);
+            if (!a || !b) return null;
+            const active = activeConn === i;
+            const dim = hoverNode && c.from !== hoverNode && c.to !== hoverNode;
+            const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+            const d = `M ${a.x} ${a.y} C ${midX} ${a.y}, ${midX} ${b.y}, ${b.x} ${b.y}`;
+            return (
+              <g key={i} className={`dbc-edge fc-${c.kind} ${active ? "on" : ""} ${dim ? "dim" : ""}`} onClick={() => { setActiveConn(active ? null : i); setActiveNode(null); }}>
+                <path d={d} className="dbc-edge-hit" />
+                <path d={d} className={`fc-line ${c.kind}`} markerEnd="url(#fc-arrow)" />
+                <foreignObject x={midX - 56} y={midY - 11} width="112" height="22" style={{ overflow: "visible", pointerEvents: "none" }}>
+                  <div className={`fc-elabel ${active ? "on" : ""}`}>{c.label}</div>
+                </foreignObject>
+              </g>
+            );
+          })}
+        </svg>
+
+        {allIds.map((id) => {
+          const p = pos[id]; if (!p) return null;
+          const ext = externals.find((e) => e.id === id);
+          const node = ext || pipeline.find((n) => n.id === id)!;
+          return (
+            <div
+              key={id}
+              className={`fc-node ${isExt(id) ? "ext" : "pipe"} ${hoverNode === id ? "hl" : ""} ${activeNode === id ? "on" : ""}`}
+              style={{ left: p.x, top: p.y, width: FN_W, height: FN_H }}
+              onMouseDown={(e) => onMouseDown(e, id)}
+              onMouseEnter={() => setHoverNode(id)}
+              onMouseLeave={() => setHoverNode((h) => (h === id ? null : h))}
+              onClick={() => { if (!drag.current?.moved) { setActiveNode(activeNode === id ? null : id); setActiveConn(null); } }}
+            >
+              <span className="fc-node-ic">{node.icon}</span>
+              <div className="fc-node-txt">
+                <div className="fc-node-label">{node.label}</div>
+                <div className="fc-node-detail">{node.detail}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {activeNode != null && (() => {
+        const ext = externals.find((e) => e.id === activeNode);
+        const node = ext || pipeline.find((n) => n.id === activeNode);
+        if (!node) return null;
+        return (
+          <div className="dbc-detail">
+            <button className="dbc-detail-x" onClick={() => setActiveNode(null)}>✕</button>
+            <div className="dbc-detail-title">{node.icon} {node.label}{ext ? " · external service" : ""}</div>
+            <p className="dbc-detail-body">{node.detail}</p>
+            {ext && (
+              <div className="dbc-detail-grid">
+                <div><div className="inv-section-label">Sends</div><div className="dbc-detail-meta">{ext.flowIn}</div></div>
+                <div><div className="inv-section-label">Returns</div><div className="dbc-detail-meta">{ext.flowOut}</div></div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {activeConn != null && conns[activeConn] && (() => {
+        const c = conns[activeConn];
+        return (
+          <div className="dbc-detail">
+            <button className="dbc-detail-x" onClick={() => setActiveConn(null)}>✕</button>
+            <div className="dbc-detail-title">
+              <span className="db-rel-from">{c.fromLabel}</span>
+              <span className="db-rel-arrow"> → </span>
+              <span className="db-rel-to">{c.toLabel}</span>
+            </div>
+            <p className="dbc-detail-body">
+              {c.kind === "ext"
+                ? `“${c.fromLabel}” calls the external service “${c.toLabel}”, sending ${c.label.toLowerCase()} and getting back ${(c.back || "a response").toLowerCase()}.`
+                : `“${c.fromLabel}” passes ${c.label.toLowerCase()} to “${c.toLabel}”.`}
+            </p>
+            <div className="dbc-detail-grid">
+              <div><div className="inv-section-label">{c.kind === "ext" ? "Sends" : "Carries"}</div><div className="dbc-detail-meta">{c.label}</div></div>
+              {c.back && <div><div className="inv-section-label">Returns</div><div className="dbc-detail-meta">{c.back}</div></div>}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 function DataFlowDiagram({ bp }: { bp: Blueprint }) {
   const pipeline = bp.pipeline ?? [];
   const edges = bp.edges ?? [];
   const externals = bp.externals ?? [];
   const ops = bp.ops ?? [];
 
-  // group edges by pair
-  const edgesBetween = (a: string, b: string) =>
-    edges.filter((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
-
   return (
     <div className="dflow">
-      {/* Main pipeline row */}
-      <div className="dflow-row">
-        {pipeline.map((node, i) => {
-          const next = pipeline[i + 1];
-          const pairEdges = next ? edgesBetween(node.id, next.id) : [];
-          const fwd = pairEdges.find((e) => e.from === node.id);
-          const bck = pairEdges.find((e) => e.to === node.id);
-          return (
-            <div key={node.id} className="dflow-col">
-              <DFlowNode node={node} />
-              {next && (
-                <div className="dflow-edge-col">
-                  {fwd && <div className="dflow-edge fwd">{fwd.label}</div>}
-                  {bck && <div className="dflow-edge bck">{bck.label}</div>}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* External services below pipeline — connected via dotted line to their node */}
-      {externals.length > 0 && (
-        <div className="dflow-exts">
-          <div className="inv-section-label" style={{ marginBottom: 12 }}>External services</div>
-          <div className="dflow-ext-grid">
-            {externals.map((ext) => {
-              const nodeIdx = pipeline.findIndex((n) => n.id === ext.connectsTo);
-              return (
-                <div key={ext.id} className="dflow-ext-card">
-                  <div className="dflow-ext-top">
-                    <div className="dflow-ext-badge">
-                      {nodeIdx >= 0 && (
-                        <span style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--faint)" }}>
-                          via {pipeline[nodeIdx]?.label}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="dflow-ext-body">
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{ext.label}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{ext.detail}</div>
-                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
-                      <div className="dflow-ext-flow">
-                        <span className="dflow-ext-arrow out">→</span>
-                        <span>{ext.flowIn}</span>
-                      </div>
-                      <div className="dflow-ext-flow">
-                        <span className="dflow-ext-arrow in">←</span>
-                        <span>{ext.flowOut}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Interactive flow canvas — pipeline + external services wired together */}
+      {pipeline.length > 0 && <FlowCanvas pipeline={pipeline} edges={edges} externals={externals} />}
 
       {/* Database tables + relations — interactive canvas */}
       {(bp.tables?.length ?? 0) > 0 && <DatabaseCanvas tables={bp.tables} relations={bp.relations ?? []} />}
@@ -488,16 +604,6 @@ function RelationDetail({ r, tables, onClose }: { r: Relation; tables: TableInfo
 }
 function singular(s: string) { return s.replace(/ies$/, "y").replace(/s$/, ""); }
 function plural(s: string) { return /s$/.test(s) ? s : s + "s"; }
-
-function DFlowNode({ node }: { node: { id: string; label: string; detail: string; icon: string } }) {
-  return (
-    <div className="dflow-node">
-      <div className="dflow-node-ic">{node.icon}</div>
-      <div className="dflow-node-label">{node.label}</div>
-      <div className="dflow-node-detail">{node.detail}</div>
-    </div>
-  );
-}
 
 /* ─────────────────────────────────────────────────────────
    Building structure — vertical stack diagram

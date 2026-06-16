@@ -951,6 +951,36 @@ table.tbl tr:hover td {
 .dbc-detail-rel { font-size: 11px; color: var(--gold); font-weight: 600; }
 @media (max-width: 768px) { .dbc-detail-grid { grid-template-columns: 1fr; } }
 
+/* ── data-flow canvas nodes ── */
+.fc-node {
+  position: absolute; display: flex; align-items: center; gap: 9px;
+  padding: 0 11px; border-radius: 11px; cursor: grab; user-select: none;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+  z-index: 2; transition: box-shadow .15s, border-color .15s, transform .12s;
+}
+.fc-node:active { cursor: grabbing; }
+.fc-node.pipe { border-left: 3px solid var(--coral); }
+.fc-node.ext  { border-left: 3px solid var(--gold); background: var(--panel-2); }
+.fc-node.hl { border-color: var(--coral); box-shadow: 0 0 0 1px var(--coral), var(--shadow); z-index: 5; }
+.fc-node.ext.hl { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), var(--shadow); }
+.fc-node.on { transform: translateY(-1px); }
+.fc-node-ic { font-size: 18px; flex: none; opacity: .9; }
+.fc-node-txt { min-width: 0; }
+.fc-node-label { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-node-detail { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.fc-line { fill: none; stroke: var(--slate); stroke-width: 1.7; transition: stroke .15s, stroke-width .15s; }
+.fc-line.ext { stroke-dasharray: 5 4; }
+.dbc-edge:hover .fc-line { stroke: var(--gold); stroke-width: 2.3; }
+.dbc-edge.on .fc-line { stroke: var(--coral); stroke-width: 2.6; }
+.fc-elabel {
+  font-family: var(--mono); font-size: 9px; text-align: center; line-height: 1.15;
+  color: var(--muted); background: var(--ink-2); border: 1px solid var(--line-soft);
+  border-radius: 6px; padding: 2px 5px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 112px;
+}
+.fc-elabel.on { color: var(--coral); border-color: var(--coral); }
+
 /* ── building structure ── */
 .bstruct { }
 .bstruct-core { margin-bottom: 20px; }
