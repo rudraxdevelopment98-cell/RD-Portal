@@ -7,15 +7,18 @@ import { hasToken } from "../lib/github";
 import viewFor from "../views";
 import ErrorBoundary from "./ErrorBoundary";
 
-/* Mobile bottom-nav items — the 5 most important */
-const MOB_NAV = ["portfolio", "mywork", "tasks", "dashboard", "profile"];
+/* Mobile bottom-nav quick items — everything else lives in the More drawer */
+const MOB_NAV = ["portfolio", "mywork", "tasks", "dashboard"];
 
 export default function Shell() {
   const { state, me, proj, myRole, myProjects, isPlatformAdmin, can, go, switchProject, logout } = usePortal();
   const [tokenOpen, setTokenOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   if (!me) return null;
 
   const route = state.route;
+
+  const navTo = (id: string) => { go(id); setMenuOpen(false); };
 
   const myOpenTasks = state.tasks.filter(
     (t) => t.assignee === me.username && t.status !== "Done"
@@ -31,7 +34,7 @@ export default function Shell() {
     return (
       <a
         className={`nav ${s.id === route ? "active" : ""}`}
-        onClick={() => go(s.id)}
+        onClick={() => navTo(s.id)}
       >
         <span className="ic">{s.ic}</span>
         {s.label}
@@ -43,8 +46,9 @@ export default function Shell() {
   const View = viewFor(route);
 
   return (
-    <div className="shell">
-      <aside className="side">
+    <div className={`shell ${menuOpen ? "menu-open" : ""}`}>
+      {menuOpen && <div className="side-backdrop" onClick={() => setMenuOpen(false)} />}
+      <aside className={`side ${menuOpen ? "open" : ""}`}>
         <div className="brand">
           <div className="logo">R</div>
           <div>
@@ -89,11 +93,11 @@ export default function Shell() {
           )}
 
           <div className="navlbl">Account</div>
-          <a className={`nav ${route === "profile" ? "active" : ""}`} onClick={() => go("profile")}>
+          <a className={`nav ${route === "profile" ? "active" : ""}`} onClick={() => navTo("profile")}>
             <span className="ic">◍</span>My Profile
           </a>
           {isPlatformAdmin && (
-            <a className={`nav ${route === "projects" ? "active" : ""}`} onClick={() => go("projects")}>
+            <a className={`nav ${route === "projects" ? "active" : ""}`} onClick={() => navTo("projects")}>
               <span className="ic">⊞</span>All Projects
             </a>
           )}
@@ -116,6 +120,7 @@ export default function Shell() {
 
       <main className="main">
         <div className="topbar">
+          <div className="iBtn mob-menu-btn" title="Menu" onClick={() => setMenuOpen(true)}>☰</div>
           <div className="crumb">
             <span>{proj?.name ?? "Portal"}</span>
             {" / "}
@@ -157,6 +162,10 @@ export default function Shell() {
             </div>
           );
         })}
+        <div className={`bn-item ${menuOpen ? "active" : ""}`} onClick={() => setMenuOpen(true)}>
+          <span className="bn-ic">☰</span>
+          <span>More</span>
+        </div>
       </nav>
 
       {tokenOpen && <TokenSettings onClose={() => setTokenOpen(false)} />}

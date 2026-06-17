@@ -231,6 +231,14 @@ main.main {
   display: none;
 }
 
+/* hamburger only shows on mobile (see mobile.css) */
+.mob-menu-btn {
+  display: none;
+}
+.side-backdrop {
+  display: none;
+}
+
 /* ---- login ---- */
 .login-wrap {
   position: fixed;

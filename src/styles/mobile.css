@@ -8,8 +8,36 @@
     padding-bottom: 64px; /* room for bottom nav */
   }
 
+  /* sidebar becomes a slide-in drawer holding the FULL navigation */
   aside.side {
-    display: none;
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100vh;
+    width: 280px;
+    max-width: 84vw;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform 0.24s ease;
+    box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+  }
+  aside.side.open {
+    transform: translateX(0);
+  }
+  .side-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 55;
+    animation: bd-fade 0.18s ease;
+  }
+  @keyframes bd-fade { from { opacity: 0; } to { opacity: 1; } }
+  .mob-menu-btn {
+    display: grid;
   }
 
   .bottom-nav {
@@ -146,6 +174,11 @@
   /* login */
   .login-card {
     padding: 28px 20px;
+  }
+
+  /* kanban board stacks into single column */
+  .kanban {
+    grid-template-columns: 1fr;
   }
 }
 
