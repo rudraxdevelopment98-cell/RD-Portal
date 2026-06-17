@@ -6,6 +6,7 @@ import { priorityChip, statusChip } from "../components/Chip";
 import Avatar from "../components/Avatar";
 import { Store } from "../lib/store";
 import { today } from "../lib/util";
+import { generatePlan, dueFor, type PlanTask } from "../lib/taskplan";
 import type { Priority } from "../lib/types";
 
 type TaskForm = { title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string };
@@ -16,6 +17,9 @@ export default function Tasks() {
   const [newTask, setNewTask] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<TaskForm>(BLANK);
+  const [plan, setPlan] = useState<PlanTask[] | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [creating, setCreating] = useState(false);
 
   if (!proj) return <EmptyState icon="✓" message="No project selected." />;
 
@@ -68,6 +72,45 @@ export default function Tasks() {
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [k]: e.target.value }));
 
+  const openPlan = () => {
+    const p = generatePlan(proj);
+    setPlan(p);
+    setPicked(new Set(p.map((_, i) => i)));
+  };
+
+  const togglePick = (i: number) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+
+  const createPlan = async () => {
+    if (!plan) return;
+    setCreating(true);
+    try {
+      // create in plan order so daily-staggered due dates line up
+      for (let i = 0; i < plan.length; i++) {
+        if (!picked.has(i)) continue;
+        const t = plan[i];
+        await Store.createTask({ title: t.title, desc: t.desc, assignee: "", due: dueFor(i), priority: t.priority, status: "To do", phase: t.phase, source: "manual" });
+      }
+      await Store.addActivity(`Auto-generated ${picked.size} task${picked.size !== 1 ? "s" : ""}`);
+      setPlan(null);
+      await reload();
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // group plan rows by their phase label for the preview
+  const planGroups: { group: string; items: { t: PlanTask; i: number }[] }[] = [];
+  (plan || []).forEach((t, i) => {
+    let g = planGroups.find((x) => x.group === t.group);
+    if (!g) { g = { group: t.group, items: [] }; planGroups.push(g); }
+    g.items.push({ t, i });
+  });
+
   return (
     <>
       <div className="page-h">
@@ -77,6 +120,7 @@ export default function Tasks() {
         </div>
         {isManager && (
           <div className="actions">
+            <button className="btn" onClick={openPlan}>⚡ Auto-generate</button>
             <button className="btn primary" onClick={() => setNewTask(true)}>+ New task</button>
           </div>
         )}
@@ -227,6 +271,45 @@ export default function Tasks() {
               </select>
             </label>
           </div>
+        </Modal>
+      )}
+
+      {plan && (
+        <Modal
+          title="Auto-generate tasks"
+          onClose={() => setPlan(null)}
+          onOk={createPlan}
+          okLabel={creating ? "Creating…" : `Create ${picked.size} task${picked.size !== 1 ? "s" : ""}`}
+          okDisabled={creating || picked.size === 0}
+        >
+          <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6, marginTop: 0 }}>
+            A starter plan for <b style={{ color: "var(--txt)" }}>{proj.name}</b>, built phase by phase from its
+            roadmap and tech stack. Due dates are staggered one per day. Untick anything you don't want, then create —
+            tasks land as <b style={{ color: "var(--txt)" }}>To do</b> &amp; unassigned, ready for you to allocate.
+          </p>
+          {planGroups.map((g) => (
+            <div key={g.group} style={{ marginBottom: 14 }}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--coral)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>
+                {g.group}
+              </div>
+              {g.items.map(({ t, i }) => (
+                <label
+                  key={i}
+                  style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line)", marginBottom: 6, cursor: "pointer", opacity: picked.has(i) ? 1 : 0.5 }}
+                >
+                  <input type="checkbox" checked={picked.has(i)} onChange={() => togglePick(i)} style={{ marginTop: 3 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontWeight: 600 }}>{t.title}</span>
+                      {priorityChip(t.priority)}
+                      <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{dueFor(i)}</span>
+                    </div>
+                    {t.desc && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{t.desc}</div>}
+                  </div>
+                </label>
+              ))}
+            </div>
+          ))}
         </Modal>
       )}
     </>
