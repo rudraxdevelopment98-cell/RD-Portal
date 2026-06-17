@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePortal } from "../context/PortalContext";
 import EmptyState from "../components/EmptyState";
 import Modal from "../components/Modal";
-import { priorityChip, statusChip } from "../components/Chip";
+import { priorityChip } from "../components/Chip";
 import Avatar from "../components/Avatar";
 import { Store } from "../lib/store";
 import { today } from "../lib/util";
 import { generatePlan, dueFor, type PlanTask } from "../lib/taskplan";
-import type { Priority } from "../lib/types";
+import type { Priority, TaskStatus } from "../lib/types";
+
+const PRI_RANK: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+const STAT_RANK: Record<string, number> = { "To do": 0, "In progress": 1, "Done": 2 };
+type SortKey = "due" | "priority" | "status" | "title" | "phase";
 
 type TaskForm = { title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string };
 const BLANK: TaskForm = { title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" };
@@ -20,17 +24,94 @@ export default function Tasks() {
   const [plan, setPlan] = useState<PlanTask[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("due");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [dailyAuto, setDailyAuto] = useState(false);
+
+  const pid = proj?.id ?? "";
+  const td = today();
+
+  // reflect this project's saved "auto daily" preference
+  useEffect(() => {
+    setSel(new Set());
+    setDailyAuto(localStorage.getItem(`rd_dailyauto_${pid}`) === "1");
+  }, [pid]);
+
+  // opt-in: once per calendar day, ensure the generated plan exists (dedup by
+  // title+phase so it never creates duplicates). Runs only for managers.
+  useEffect(() => {
+    if (!proj || !dailyAuto || !isManager) return;
+    const runKey = `rd_dailyrun_${pid}`;
+    if (localStorage.getItem(runKey) === td) return;
+    (async () => {
+      const existing = new Set(state.tasks.filter((t) => t.projectId === pid).map((t) => `${t.title}|${t.phase}`));
+      const planNow = generatePlan(proj);
+      let n = 0;
+      for (let i = 0; i < planNow.length; i++) {
+        const t = planNow[i];
+        if (existing.has(`${t.title}|${t.phase}`)) continue;
+        await Store.createTask({ title: t.title, desc: t.desc, assignee: "", due: dueFor(i), priority: t.priority, status: "To do", phase: t.phase, source: "manual" });
+        n++;
+      }
+      localStorage.setItem(runKey, td);
+      if (n) { await Store.addActivity(`Daily auto-added ${n} task${n !== 1 ? "s" : ""}`); await reload(); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyAuto, pid, td]);
 
   if (!proj) return <EmptyState icon="✓" message="No project selected." />;
 
-  const tasks = inProj(state.tasks).slice().sort((a, b) => (a.due || "").localeCompare(b.due || ""));
+  const tasks = inProj(state.tasks);
+  const sorted = tasks.slice().sort((a, b) => {
+    let r = 0;
+    switch (sortKey) {
+      case "due": r = (a.due || "~").localeCompare(b.due || "~"); break;
+      case "priority": r = (PRI_RANK[a.priority] ?? 9) - (PRI_RANK[b.priority] ?? 9); break;
+      case "status": r = (STAT_RANK[a.status] ?? 9) - (STAT_RANK[b.status] ?? 9); break;
+      case "title": r = a.title.localeCompare(b.title); break;
+      case "phase": r = (a.phase || "").localeCompare(b.phase || ""); break;
+    }
+    return sortDir === "asc" ? r : -r;
+  });
   const cols = [
     { status: "To do", count: tasks.filter((t) => t.status === "To do").length },
     { status: "In progress", count: tasks.filter((t) => t.status === "In progress").length },
     { status: "Done", count: tasks.filter((t) => t.status === "Done").length },
   ];
   const members = state.members.filter((m) => m.projectId === proj.id);
-  const td = today();
+
+  const allSelected = sorted.length > 0 && sorted.every((t) => sel.has(t.id));
+  const toggleAll = () => setSel(allSelected ? new Set() : new Set(sorted.map((t) => t.id)));
+  const toggleOne = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const bulkStatus = async (status: TaskStatus) => {
+    for (const id of sel) await Store.updateTask(id, { status });
+    await Store.addActivity(`Set ${sel.size} task${sel.size !== 1 ? "s" : ""} → ${status}`);
+    setSel(new Set()); await reload();
+  };
+  const bulkPriority = async (priority: Priority) => {
+    for (const id of sel) await Store.updateTask(id, { priority });
+    await Store.addActivity(`Set priority on ${sel.size} task${sel.size !== 1 ? "s" : ""}`);
+    setSel(new Set()); await reload();
+  };
+  const bulkAssign = async (assignee: string) => {
+    for (const id of sel) await Store.updateTask(id, { assignee });
+    await Store.addActivity(`Reassigned ${sel.size} task${sel.size !== 1 ? "s" : ""}`);
+    setSel(new Set()); await reload();
+  };
+  const bulkDelete = async () => {
+    if (!confirm(`Delete ${sel.size} selected task${sel.size !== 1 ? "s" : ""}?`)) return;
+    for (const id of sel) await Store.deleteTask(id);
+    await Store.addActivity(`Deleted ${sel.size} task${sel.size !== 1 ? "s" : ""}`);
+    setSel(new Set()); await reload();
+  };
+
+  const toggleDaily = () => {
+    const v = !dailyAuto;
+    setDailyAuto(v);
+    localStorage.setItem(`rd_dailyauto_${pid}`, v ? "1" : "0");
+  };
 
   const setStatus = async (id: string, status: string) => {
     await Store.updateTask(id, { status: status as any });
@@ -120,6 +201,9 @@ export default function Tasks() {
         </div>
         {isManager && (
           <div className="actions">
+            <button className={`btn ${dailyAuto ? "primary" : ""}`} onClick={toggleDaily} title="Once a day, auto-add the generated plan for this project (no duplicates)">
+              {dailyAuto ? "✓ Daily auto" : "Daily auto"}
+            </button>
             <button className="btn" onClick={openPlan}>⚡ Auto-generate</button>
             <button className="btn primary" onClick={() => setNewTask(true)}>+ New task</button>
           </div>
@@ -139,11 +223,56 @@ export default function Tasks() {
         ))}
       </div>
 
+      {/* Action / sort bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>Sort</span>
+        <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
+          <option value="due">Due date</option>
+          <option value="priority">Priority</option>
+          <option value="status">Status</option>
+          <option value="title">Title</option>
+          <option value="phase">Phase</option>
+        </select>
+        <button className="btn sm" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))} title="Toggle direction">
+          {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
+        </button>
+
+        {isManager && sel.size > 0 && (
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span className="chip coral">{sel.size} selected</span>
+            <select value="" onChange={(e) => e.target.value && bulkAssign(e.target.value === "__none" ? "" : e.target.value)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
+              <option value="">Assign to…</option>
+              <option value="__none">Unassigned</option>
+              {members.map((m) => {
+                const u = state.users.find((x) => x.username === m.username);
+                return <option key={m.username} value={m.username}>{u?.name ?? m.username}</option>;
+              })}
+            </select>
+            <select value="" onChange={(e) => e.target.value && bulkPriority(e.target.value as Priority)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
+              <option value="">Priority…</option>
+              {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value="" onChange={(e) => e.target.value && bulkStatus(e.target.value as TaskStatus)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
+              <option value="">Status…</option>
+              {["To do", "In progress", "Done"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <button className="btn sm" onClick={() => bulkStatus("Done")}>✓ Approve</button>
+            <button className="btn danger sm" onClick={bulkDelete}>Delete</button>
+            <button className="btn sm" onClick={() => setSel(new Set())}>Clear</button>
+          </div>
+        )}
+      </div>
+
       <div className="card">
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
               <tr>
+                {isManager && (
+                  <th style={{ width: 30 }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" />
+                  </th>
+                )}
                 <th>Task</th>
                 <th>Assignee</th>
                 <th>Due</th>
@@ -153,11 +282,16 @@ export default function Tasks() {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((t) => {
+              {sorted.map((t) => {
                 const late = t.status !== "Done" && t.due && t.due < td;
                 const name = assigneeName(t.assignee);
                 return (
-                  <tr key={t.id}>
+                  <tr key={t.id} style={sel.has(t.id) ? { background: "var(--panel-2)" } : undefined}>
+                    {isManager && (
+                      <td>
+                        <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggleOne(t.id)} />
+                      </td>
+                    )}
                     <td>
                       <div style={{ fontWeight: 600 }}>{t.title}</div>
                       {t.desc && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{t.desc}</div>}
