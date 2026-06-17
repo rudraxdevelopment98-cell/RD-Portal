@@ -354,10 +354,19 @@ function FlowCanvas({ pipeline, edges, externals }: { pipeline: FlowNode[]; edge
             <div className="dbc-detail-title">{node.icon} {node.label}{ext ? " · external service" : ""}</div>
             <p className="dbc-detail-body">{node.detail}</p>
             {ext && (
-              <div className="dbc-detail-grid">
-                <div><div className="inv-section-label">Sends</div><div className="dbc-detail-meta">{ext.flowIn}</div></div>
-                <div><div className="inv-section-label">Returns</div><div className="dbc-detail-meta">{ext.flowOut}</div></div>
-              </div>
+              <>
+                <div className="dbc-detail-grid">
+                  {ext.platform && <div><div className="inv-section-label">Platform / provider</div><div className="dbc-detail-meta">{ext.platform}</div></div>}
+                  <div><div className="inv-section-label">Sends</div><div className="dbc-detail-meta">{ext.flowIn}</div></div>
+                  <div><div className="inv-section-label">Returns</div><div className="dbc-detail-meta">{ext.flowOut}</div></div>
+                </div>
+                {ext.limits && (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="inv-section-label">Limits / expiry</div>
+                    <div className="dbc-detail-meta">{ext.limits}</div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
@@ -399,6 +408,31 @@ function DataFlowDiagram({ bp }: { bp: Blueprint }) {
     <div className="dflow">
       {/* Interactive flow canvas — pipeline + external services wired together */}
       {pipeline.length > 0 && <FlowCanvas pipeline={pipeline} edges={edges} externals={externals} />}
+
+      {/* External services & APIs — name · platform · limits at a glance */}
+      {externals.length > 0 && (
+        <div className="dflow-ops">
+          <div className="inv-section-label" style={{ marginBottom: 8 }}>External services &amp; APIs</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {externals.map((x) => (
+              <div key={x.id} className="ext-card">
+                <div className="ext-card-head">
+                  <span style={{ color: "var(--coral)" }}>{x.icon}</span>
+                  <b>{x.label}</b>
+                  {x.platform && <span className="ext-platform">{x.platform}</span>}
+                </div>
+                <div className="ext-card-detail">{x.detail}</div>
+                {x.limits && (
+                  <div className="ext-card-limits">
+                    <span className="ext-limits-tag">Limits / expiry</span>
+                    {x.limits}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Database tables + relations — interactive canvas */}
       {(bp.tables?.length ?? 0) > 0 && <DatabaseCanvas tables={bp.tables} relations={bp.relations ?? []} />}

@@ -11,7 +11,7 @@ import type { Phase, TreeNode } from "./types";
 
 export interface FlowNode { id: string; label: string; detail: string; icon: string; }
 export interface FlowEdge { from: string; to: string; label: string; }
-export interface ExtService { id: string; label: string; detail: string; icon: string; connectsTo: string; /* pipeline node id */ flowIn: string; flowOut: string; }
+export interface ExtService { id: string; label: string; detail: string; icon: string; connectsTo: string; /* pipeline node id */ flowIn: string; flowOut: string; platform?: string; /* provider / vendor */ limits?: string; /* free-tier caps, rate limits, key expiry */ }
 export interface Layer { id: string; name: string; role: string; icon: string; dirs: string[]; color: string; }
 export interface Column { name: string; type: string; pk?: boolean; fk?: { table: string; column: string }; }
 export interface TableInfo { name: string; columns: Column[]; }
@@ -191,30 +191,32 @@ function buildFlow(input: {
   const clientNode = pipeline.find((n) => n.id === "client")?.id || "client";
 
   if (hasSupabase) {
-    addExt({ id: "supabase-auth", label: "Supabase Auth", detail: "OAuth (Google / GitHub) + JWT session issuance", connectsTo: clientNode, flowIn: "OAuth sign-in redirect", flowOut: "JWT access + refresh token" });
+    addExt({ id: "supabase-auth", label: "Supabase Auth", detail: "OAuth (Google / GitHub) + JWT session issuance", connectsTo: clientNode, flowIn: "OAuth sign-in redirect", flowOut: "JWT access + refresh token", platform: "Supabase", limits: "Free tier: 50,000 monthly active users; access token (JWT) expires after 1 hour, then refreshed." });
     if (/supabase\.storage|\.storage\.from\(/.test(text) || allPaths.some((p) => /storage/i.test(p)))
-      addExt({ id: "supabase-storage", label: "Supabase Storage", detail: "S3-compatible object storage with RLS-backed buckets", connectsTo: serverOrClient, flowIn: "file upload (multipart)", flowOut: "public / signed URL" });
+      addExt({ id: "supabase-storage", label: "Supabase Storage", detail: "S3-compatible object storage with RLS-backed buckets", connectsTo: serverOrClient, flowIn: "file upload (multipart)", flowOut: "public / signed URL", platform: "Supabase", limits: "Free tier: 1 GB stored, 5 GB egress/month; signed URLs expire on the TTL you set." });
     if (/\.channel\(|supabase\.realtime|postgres_changes/.test(text))
-      addExt({ id: "supabase-realtime", label: "Supabase Realtime", detail: "WebSocket subscription to Postgres row changes", connectsTo: clientNode, flowIn: "channel subscribe (table filter)", flowOut: "INSERT / UPDATE / DELETE row events" });
+      addExt({ id: "supabase-realtime", label: "Supabase Realtime", detail: "WebSocket subscription to Postgres row changes", connectsTo: clientNode, flowIn: "channel subscribe (table filter)", flowOut: "INSERT / UPDATE / DELETE row events", platform: "Supabase", limits: "Free tier: 200 concurrent connections, 2M messages/month." });
   }
   if (depHas(pkg, "react-native-purchases") || /revenuecat/.test(text))
-    addExt({ id: "revenuecat", label: "RevenueCat", detail: "Entitlements, offerings & receipt validation for in-app subscriptions", connectsTo: clientNode, flowIn: "purchase / restore request (product id)", flowOut: "CustomerInfo (active entitlements)" });
+    addExt({ id: "revenuecat", label: "RevenueCat", detail: "Entitlements, offerings & receipt validation for in-app subscriptions", connectsTo: clientNode, flowIn: "purchase / restore request (product id)", flowOut: "CustomerInfo (active entitlements)", platform: "RevenueCat", limits: "Free up to $2.5K monthly tracked revenue, then 1% of revenue." });
   if (depHas(pkg, "stripe") || depHas(pkg, "@stripe/stripe-js"))
-    addExt({ id: "stripe", label: "Stripe", detail: "PaymentIntents API + webhooks", connectsTo: serverOrClient, flowIn: "PaymentIntent / checkout session", flowOut: "charge result + webhook event" });
+    addExt({ id: "stripe", label: "Stripe", detail: "PaymentIntents API + webhooks", connectsTo: serverOrClient, flowIn: "PaymentIntent / checkout session", flowOut: "charge result + webhook event", platform: "Stripe", limits: "No free-tier cap; per-transaction fee (~2.9% + 30¢). Restricted/secret keys can be rotated/expired in the dashboard." });
   if (depHas(pkg, "openai"))
-    addExt({ id: "openai", label: "OpenAI API", detail: "Chat/completions endpoint", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens" });
+    addExt({ id: "openai", label: "OpenAI API", detail: "Chat/completions endpoint", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens", platform: "OpenAI", limits: "Pay-per-token, no free tier; rate limits (RPM/TPM) scale by usage tier. API keys are long-lived until revoked." });
   if (depHas(pkg, "@anthropic-ai/sdk"))
-    addExt({ id: "anthropic", label: "Claude API", detail: "Messages endpoint (Anthropic SDK)", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens" });
+    addExt({ id: "anthropic", label: "Claude API", detail: "Messages endpoint (Anthropic SDK)", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens", platform: "Anthropic", limits: "Pay-per-token; rate limits (RPM/TPM/ITPM) scale by usage tier. API keys are long-lived until revoked." });
+  if (depHas(pkg, "@google/generative-ai") || depHas(pkg, "@google/genai") || /\bgemini\b|generative\s*ai|google ai studio|googleai/.test(text))
+    addExt({ id: "gemini", label: "Gemini API", detail: "Google Generative AI — Gemini models (text / vision / multimodal)", connectsTo: serverOrClient, flowIn: "prompt + message history (optional images)", flowOut: "streamed completion tokens", platform: "Google (Google AI Studio / Vertex AI)", limits: "Free tier via Google AI Studio with low RPM/RPD limits (varies by model); paid tier has higher quotas. API key from AI Studio is long-lived until revoked." });
   if (depHas(pkg, "firebase"))
-    addExt({ id: "firebase", label: "Firebase", detail: "Auth / Firestore / Cloud Messaging SDK", connectsTo: serverOrClient, flowIn: "SDK call (auth token / query)", flowOut: "realtime snapshot / auth result" });
+    addExt({ id: "firebase", label: "Firebase", detail: "Auth / Firestore / Cloud Messaging SDK", connectsTo: serverOrClient, flowIn: "SDK call (auth token / query)", flowOut: "realtime snapshot / auth result", platform: "Google (Firebase)", limits: "Spark (free) plan: 50K Firestore reads/day, 1 GB stored; upgrade to Blaze for pay-as-you-go." });
   if (hasHibp) {
     const hiNode = pipeline.find((n) => n.id === "server") ? "server" : clientNode;
-    addExt({ id: "hibp", label: "HaveIBeenPwned", detail: "Pwned Passwords API v3 — k-anonymity model, full hash never leaves the client/server", connectsTo: hiNode, flowIn: "SHA-1 prefix (first 5 hex chars)", flowOut: "list of matching suffix:count pairs" });
+    addExt({ id: "hibp", label: "HaveIBeenPwned", detail: "Pwned Passwords API v3 — k-anonymity model, full hash never leaves the client/server", connectsTo: hiNode, flowIn: "SHA-1 prefix (first 5 hex chars)", flowOut: "list of matching suffix:count pairs", platform: "Have I Been Pwned (Troy Hunt)", limits: "Pwned Passwords range API is free & unauthenticated; the breach-search API needs a paid key with per-tier rate limits." });
   }
   if (depHas(pkg, "@sentry/react-native") || depHas(pkg, "@sentry/node") || depHas(pkg, "@sentry/react"))
-    addExt({ id: "sentry", label: "Sentry", detail: "Error & performance monitoring ingest", connectsTo: clientNode, flowIn: "exception event + stack trace + breadcrumbs", flowOut: "ingest ack" });
+    addExt({ id: "sentry", label: "Sentry", detail: "Error & performance monitoring ingest", connectsTo: clientNode, flowIn: "exception event + stack trace + breadcrumbs", flowOut: "ingest ack", platform: "Sentry", limits: "Free Developer plan: 5K errors/month, 1 user; DSN is public, auth tokens can be scoped/rotated." });
   if (depHas(pkg, "expo-notifications") || /push notification/.test(text))
-    addExt({ id: "push", label: "Push Notifications", detail: "Expo push service → APNs / FCM", connectsTo: serverOrClient, flowIn: "push token + payload", flowOut: "device-delivered notification" });
+    addExt({ id: "push", label: "Push Notifications", detail: "Expo push service → APNs / FCM", connectsTo: serverOrClient, flowIn: "push token + payload", flowOut: "device-delivered notification", platform: "Expo → Apple APNs / Google FCM", limits: "Expo push service is free; APNs/FCM credentials must be kept valid (APNs key/cert can expire)." });
 
   // ops / build
   const ops: FlowNode[] = [];

@@ -912,6 +912,33 @@ table.tbl tr:hover td {
   border-radius: 8px; padding: 6px 11px; font-size: 12px;
 }
 
+/* ── external service / API cards ── */
+.ext-card {
+  background: var(--ink-2); border: 1px solid var(--line-soft);
+  border-radius: 10px; padding: 11px 13px;
+}
+.ext-card-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.ext-card-head b { font-size: 13.5px; }
+.ext-platform {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+  color: var(--sage); background: var(--sage-soft);
+  padding: 2px 8px; border-radius: 999px;
+}
+.ext-card-detail {
+  color: var(--muted); font-size: 12px; margin-top: 5px; line-height: 1.5;
+}
+.ext-card-limits {
+  margin-top: 8px; font-size: 11.5px; color: var(--faint);
+  line-height: 1.55; display: flex; gap: 7px; flex-wrap: wrap; align-items: baseline;
+}
+.ext-limits-tag {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--gold);
+  background: var(--gold-soft); padding: 2px 7px; border-radius: 6px; flex: none;
+}
+
 /* ── data flow diagram ── */
 .dflow { }
 .dflow-row {
