@@ -467,18 +467,31 @@ export function buildBlueprint(input: {
   };
 }
 
-/* ---------- live fallback from a stored project (no README) ---------- */
-export function deriveBlueprint(p: { desc?: string; techStack?: string[]; repoTree?: TreeNode | null; defaultBranch?: string }): Blueprint {
+/* ---------- live fallback from a stored project (no fresh fetch) ---------- */
+export function deriveBlueprint(p: { desc?: string; readme?: string; techStack?: string[]; repoTree?: TreeNode | null; defaultBranch?: string }): Blueprint {
   const topDirs = topDirsOf(p.repoTree);
+  const paths = flattenPaths(p.repoTree);
   return buildBlueprint({
     description: p.desc || "",
-    readme: null,
+    readme: p.readme ?? null,
     topDirs,
-    allPaths: flattenPaths(p.repoTree),
+    allPaths: paths,
     pkg: null,
     techStack: p.techStack || [],
     language: null,
+    // file paths themselves are strong signals (e.g. llm_gemini.py, .env.example)
+    signals: [p.readme || "", p.desc || "", paths.join(" ")].join("\n"),
   });
+}
+
+/* A blueprint is "thin" when detection found essentially nothing worth showing
+   — e.g. an older/empty stored one. We re-derive those from persisted repo data. */
+export function isThinBlueprint(bp: Blueprint | undefined | null): boolean {
+  if (!bp) return true;
+  const ext = (bp.externals?.length ?? 0);
+  const lay = (bp.layers?.length ?? 0);
+  const pipe = (bp.pipeline?.length ?? 0);
+  return ext + lay + pipe === 0;
 }
 
 function flattenPaths(tree: TreeNode | null | undefined, acc: string[] = []): string[] {

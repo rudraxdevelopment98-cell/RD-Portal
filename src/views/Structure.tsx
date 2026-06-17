@@ -4,7 +4,7 @@ import EmptyState from "../components/EmptyState";
 import RepoTree from "../components/RepoTree";
 import { analyzeRepo } from "../lib/github";
 import { resyncProject } from "../lib/sync";
-import { deriveBlueprint, deriveStages, type Blueprint } from "../lib/blueprint";
+import { deriveBlueprint, isThinBlueprint, deriveStages, type Blueprint } from "../lib/blueprint";
 import { Store } from "../lib/store";
 import { fmt } from "../lib/util";
 import type { PhaseStatus } from "../lib/types";
@@ -25,11 +25,21 @@ export default function Structure() {
     );
   }
 
-  // use the stored blueprint only if it has the current shape (includes edges);
-  // older stored blueprints predate the data-flow upgrade, so re-derive those.
+  // Use the stored blueprint only if it has the current shape (includes edges)
+  // AND actually found something. Older or empty stored blueprints are re-derived
+  // live from the persisted repo tree + README — so a project like Rudra shows its
+  // detected APIs/tech immediately, without needing a re-sync.
   const stored = proj.blueprint;
   const isCurrentShape = !!stored && Array.isArray(stored.layers) && Array.isArray((stored as any).edges) && Array.isArray((stored as any).pipeline);
-  const bp: Blueprint = isCurrentShape ? (stored as Blueprint) : deriveBlueprint(proj);
+  const derived = deriveBlueprint(proj);
+  const usingStored = isCurrentShape && !isThinBlueprint(stored);
+  let bp: Blueprint = usingStored ? (stored as Blueprint) : derived;
+  // even when the stored one is usable, backfill externals/ops the newer detector
+  // now finds (e.g. Gemini) if the stored copy predates them.
+  if (usingStored) {
+    if ((bp.externals?.length ?? 0) === 0 && derived.externals.length) bp = { ...bp, externals: derived.externals };
+    if ((bp.ops?.length ?? 0) === 0 && derived.ops.length) bp = { ...bp, ops: derived.ops };
+  }
   const { stages, progress } = deriveStages(proj.phases || []);
   const allDone = stages.length > 0 && stages.every((s) => s.state === "done");
 
