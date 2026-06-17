@@ -13,8 +13,8 @@
   --txt: #ecf2ee;
   --muted: #7e96a0;
   --faint: #516872;
-  --coral: #ff7a66;
-  --coral-soft: rgba(255, 122, 102, 0.12);
+  --coral: #ff7d52;
+  --coral-soft: rgba(255, 125, 82, 0.13);
   --gold: #e8c56a;
   --gold-soft: rgba(232, 197, 106, 0.12);
   --sage: #7fd1a8;
@@ -45,8 +45,9 @@ body {
   color: var(--txt);
   -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(900px 480px at 88% -8%, rgba(255, 122, 102, 0.07), transparent 60%),
-    radial-gradient(740px 460px at -5% 4%, rgba(127, 209, 168, 0.05), transparent 55%),
+    radial-gradient(900px 480px at 88% -8%, rgba(255, 125, 82, 0.10), transparent 60%),
+    radial-gradient(740px 460px at -5% 4%, rgba(127, 209, 168, 0.04), transparent 55%),
+    radial-gradient(1200px 900px at 50% 118%, rgba(255, 125, 82, 0.035), transparent 70%),
     var(--ink);
 }
 a {
