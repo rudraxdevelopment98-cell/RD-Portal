@@ -545,6 +545,9 @@ table.tbl tr:hover td {
   border-radius: 16px;
   box-shadow: var(--shadow-lg);
 }
+.modal.wide {
+  width: 820px;
+}
 .modal .mh {
   padding: 18px 22px;
   border-bottom: 1px solid var(--line-soft);

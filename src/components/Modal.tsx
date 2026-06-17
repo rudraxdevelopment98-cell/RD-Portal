@@ -7,10 +7,11 @@ interface Props {
   okLabel?: string;
   okDisabled?: boolean;
   hideCancel?: boolean;
+  wide?: boolean;
   children: React.ReactNode;
 }
 
-export default function Modal({ title, onClose, onOk, okLabel = "Save", okDisabled, hideCancel, children }: Props) {
+export default function Modal({ title, onClose, onOk, okLabel = "Save", okDisabled, hideCancel, wide, children }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
@@ -19,7 +20,7 @@ export default function Modal({ title, onClose, onOk, okLabel = "Save", okDisabl
 
   return (
     <div className="modal-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal">
+      <div className={wide ? "modal wide" : "modal"}>
         <div className="mh">
           <h3>{title}</h3>
           <span className="x" onClick={onClose}>✕</span>
