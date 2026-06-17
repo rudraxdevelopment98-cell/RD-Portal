@@ -135,10 +135,12 @@ export interface RepoAnalysis {
 }
 
 /* detect tech stack from file paths + package.json deps */
-function detectStack(paths: string[], pkg: any): string[] {
+function detectStack(paths: string[], pkg: any, signals = ""): string[] {
   const set = new Set<string>();
   const has = (re: RegExp) => paths.some((p) => re.test(p));
   const ext = (e: string) => paths.filter((p) => p.endsWith(e)).length;
+  const sig = signals.toLowerCase();
+  const inSig = (re: RegExp) => re.test(sig);
 
   if (pkg) {
     const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
@@ -166,6 +168,15 @@ function detectStack(paths: string[], pkg: any): string[] {
   if (has(/(^|\/)Dockerfile$/i)) set.add("Docker");
   if (has(/^supabase\//)) set.add("Supabase");
   if (has(/^\.github\/workflows\//)) set.add("GitHub Actions");
+
+  // signals-based libraries (work for Python / Flutter / etc.)
+  if (inSig(/\bflask\b/)) set.add("Flask");
+  if (inSig(/\bdjango\b/)) set.add("Django");
+  if (inSig(/\bfastapi\b/)) set.add("FastAPI");
+  if (inSig(/streamlit/)) set.add("Streamlit");
+  if (inSig(/\bsupabase\b/)) set.add("Supabase");
+  if (inSig(/firebase/)) set.add("Firebase");
+  if (inSig(/tensorflow|pytorch|\btorch\b|scikit-learn|sklearn/)) set.add("ML / AI");
   return [...set];
 }
 
@@ -284,7 +295,27 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
       if (merged) schema = { content: merged, path: schemaPaths[schemaPaths.length - 1] };
     }
 
-    const techStack = detectStack(allPaths, pkg);
+    // Gather extra "signals" from manifests + env templates + lockfiles so we
+    // can detect APIs / libraries in non-JS projects (Python, Flutter, Go…)
+    // and in projects that call services via REST or env vars rather than an
+    // npm dependency. Best-effort: missing files just return null.
+    const SIGNAL_FILES = [
+      "requirements.txt", "pyproject.toml", "Pipfile", "poetry.lock", "setup.py", "environment.yml",
+      "pubspec.yaml", "pubspec.lock",
+      "go.mod", "Cargo.toml", "composer.json", "Gemfile", "build.gradle", "build.gradle.kts", "pom.xml",
+      ".env.example", ".env.sample", ".env.template", ".env.local.example", "env.example", ".env.dist",
+      "app.json", "app.config.js", "app.config.ts", "config.js", "config.ts",
+      "yarn.lock", "package-lock.json", "pnpm-lock.yaml",
+    ];
+    const signalTargets = SIGNAL_FILES.filter((f) => allPaths.includes(f));
+    const signalParts = await Promise.all(signalTargets.map((f) => ghRaw(repo, f)));
+    const signals = [
+      meta.description || "",
+      (meta.topics || []).join(" "),
+      ...signalParts.filter(Boolean) as string[],
+    ].join("\n");
+
+    const techStack = detectStack(allPaths, pkg, signals);
     const { tree, count } = buildTree(rawPaths);
     const topDirs = (tree.children || []).filter((c) => c.type === "dir").map((c) => c.name);
     const blueprint = buildBlueprint({
@@ -296,6 +327,7 @@ export async function analyzeRepo(repoInput: string): Promise<RepoAnalysis> {
       techStack,
       language: meta.language ?? null,
       schema,
+      signals,
     });
 
     const tasks: ImportedTask[] = (Array.isArray(issues) ? issues : [])

@@ -121,13 +121,110 @@ function depHas(pkg: any, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(deps, name);
 }
 
+/* ---------- external API / service catalog ----------
+   Matched against package deps (pkgs) AND a combined text haystack (rx):
+   README + description + manifests + env templates + file paths.
+   This lets us spot a service used via raw REST or env var, not just an SDK. */
+interface ApiSig {
+  id: string; label: string; platform: string; limits: string;
+  detail: string; flowIn: string; flowOut: string;
+  side?: "client" | "server"; // where it typically connects (default: server-or-client)
+  pkgs?: string[]; rx?: RegExp;
+}
+const API_CATALOG: ApiSig[] = [
+  { id: "gemini", label: "Gemini API", platform: "Google (Google AI Studio / Vertex AI)",
+    detail: "Google Generative AI — Gemini models (text / vision / multimodal)",
+    flowIn: "prompt + message history (optional images)", flowOut: "generated tokens / JSON",
+    limits: "Free tier via Google AI Studio with low RPM/RPD limits (varies by model); paid tier raises quotas. AI Studio API key is long-lived until revoked.",
+    pkgs: ["@google/generative-ai", "@google/genai", "google-generativeai", "google_generative_ai"],
+    rx: /\bgemini\b|generative\s*ai|google[ _-]?generativeai|generativelanguage\.googleapis\.com|google ai studio|gemini[_-]?api[_-]?key/ },
+  { id: "openai", label: "OpenAI API", platform: "OpenAI",
+    detail: "Chat/completions, embeddings & images endpoints",
+    flowIn: "prompt + message history", flowOut: "streamed completion tokens",
+    limits: "Pay-per-token, no free tier; rate limits (RPM/TPM) scale by usage tier. API keys are long-lived until revoked.",
+    pkgs: ["openai"], rx: /\bopenai\b|api\.openai\.com|openai[_-]?api[_-]?key|gpt-4|gpt-3\.5/ },
+  { id: "anthropic", label: "Claude API", platform: "Anthropic",
+    detail: "Messages endpoint (Claude models)",
+    flowIn: "prompt + message history", flowOut: "streamed completion tokens",
+    limits: "Pay-per-token; rate limits (RPM/TPM/ITPM) scale by usage tier. API keys are long-lived until revoked.",
+    pkgs: ["@anthropic-ai/sdk", "anthropic"], rx: /\banthropic\b|\bclaude\b|api\.anthropic\.com|anthropic[_-]?api[_-]?key/ },
+  { id: "firebase", label: "Firebase", platform: "Google (Firebase)",
+    detail: "Auth / Firestore / Realtime DB / Cloud Messaging",
+    flowIn: "SDK call (auth token / query)", flowOut: "realtime snapshot / auth result", side: "client",
+    limits: "Spark (free) plan: 50K Firestore reads/day, 1 GB stored; upgrade to Blaze for pay-as-you-go.",
+    pkgs: ["firebase", "firebase-admin", "@react-native-firebase/app", "firebase_core", "cloud_firestore"],
+    rx: /firebase|firestore|firebaseio\.com|firebase[_-]?api[_-]?key|google-services\.json/ },
+  { id: "stripe", label: "Stripe", platform: "Stripe",
+    detail: "PaymentIntents API + webhooks",
+    flowIn: "PaymentIntent / checkout session", flowOut: "charge result + webhook event",
+    limits: "No free-tier cap; per-transaction fee (~2.9% + 30¢). Secret/restricted keys can be rotated in the dashboard.",
+    pkgs: ["stripe", "@stripe/stripe-js"], rx: /\bstripe\b|api\.stripe\.com|stripe[_-]?(secret|api|publishable)[_-]?key|sk_live|pk_live/ },
+  { id: "revenuecat", label: "RevenueCat", platform: "RevenueCat",
+    detail: "Entitlements, offerings & receipt validation for in-app subscriptions",
+    flowIn: "purchase / restore request (product id)", flowOut: "CustomerInfo (active entitlements)", side: "client",
+    limits: "Free up to $2.5K monthly tracked revenue, then 1% of revenue.",
+    pkgs: ["react-native-purchases", "purchases_flutter"], rx: /revenuecat/ },
+  { id: "twilio", label: "Twilio", platform: "Twilio",
+    detail: "SMS / WhatsApp / voice messaging API",
+    flowIn: "send-message request (to, body)", flowOut: "message SID + delivery status",
+    limits: "Pay-as-you-go (trial credit only); per-message fees vary by country. Auth token can be rotated.",
+    pkgs: ["twilio"], rx: /\btwilio\b|api\.twilio\.com|twilio[_-]?(account[_-]?sid|auth[_-]?token)/ },
+  { id: "sendgrid", label: "SendGrid", platform: "Twilio SendGrid",
+    detail: "Transactional email API",
+    flowIn: "email payload (to, subject, body)", flowOut: "send accepted + message id",
+    limits: "Free tier: 100 emails/day; API key is long-lived until revoked.",
+    pkgs: ["@sendgrid/mail"], rx: /sendgrid|sendgrid[_-]?api[_-]?key/ },
+  { id: "resend", label: "Resend", platform: "Resend",
+    detail: "Transactional email API",
+    flowIn: "email payload (to, subject, html)", flowOut: "send accepted + message id",
+    limits: "Free tier: 3,000 emails/month, 100/day; API key is long-lived until revoked.",
+    pkgs: ["resend"], rx: /\bresend\b|resend[_-]?api[_-]?key/ },
+  { id: "googlemaps", label: "Google Maps Platform", platform: "Google",
+    detail: "Maps / Places / Geocoding / Directions APIs",
+    flowIn: "geocode / places / directions request", flowOut: "coordinates / place data / routes", side: "client",
+    limits: "$200 free monthly credit, then pay-per-request; restrict the API key by referrer/IP.",
+    pkgs: ["@react-google-maps/api", "google_maps_flutter"], rx: /maps\.googleapis\.com|google[_-]?maps[_-]?api[_-]?key|places api/ },
+  { id: "mapbox", label: "Mapbox", platform: "Mapbox",
+    detail: "Maps / geocoding / navigation tiles",
+    flowIn: "tile / geocode request", flowOut: "map tiles / geocode results", side: "client",
+    limits: "Free tier: 50K map loads/month; access token can be rotated/scoped.",
+    pkgs: ["mapbox-gl", "@rnmapbox/maps"], rx: /mapbox|mapbox[_-]?(access[_-]?)?token|pk\.eyj/ },
+  { id: "cloudinary", label: "Cloudinary", platform: "Cloudinary",
+    detail: "Image / video upload, storage & transformation CDN",
+    flowIn: "asset upload", flowOut: "hosted + transformed media URL",
+    limits: "Free tier: 25 monthly credits (storage+transforms+bandwidth); API secret can be rotated.",
+    pkgs: ["cloudinary"], rx: /cloudinary|cloudinary[_-]?(url|api[_-]?key)/ },
+  { id: "algolia", label: "Algolia", platform: "Algolia",
+    detail: "Hosted search index + instant search",
+    flowIn: "indexing / search query", flowOut: "ranked search hits",
+    limits: "Free 'Build' plan: 10K search requests + 1M records/month; admin key must stay server-side.",
+    pkgs: ["algoliasearch"], rx: /algolia|algolia[_-]?(app[_-]?id|api[_-]?key)/ },
+  { id: "aws", label: "AWS", platform: "Amazon Web Services",
+    detail: "AWS SDK — S3 / Lambda / DynamoDB / etc.",
+    flowIn: "signed AWS API request", flowOut: "service response",
+    limits: "12-month free tier on many services then pay-as-you-go; rotate IAM access keys regularly.",
+    pkgs: ["aws-sdk", "@aws-sdk/client-s3", "boto3"], rx: /\baws[_-]?(access[_-]?key[_-]?id|secret)|amazonaws\.com|\bboto3\b/ },
+  { id: "sentry", label: "Sentry", platform: "Sentry",
+    detail: "Error & performance monitoring ingest",
+    flowIn: "exception event + stack trace + breadcrumbs", flowOut: "ingest ack", side: "client",
+    limits: "Free Developer plan: 5K errors/month, 1 user; DSN is public, auth tokens can be scoped/rotated.",
+    pkgs: ["@sentry/react-native", "@sentry/node", "@sentry/react", "@sentry/nextjs", "sentry-sdk"],
+    rx: /\bsentry\b|sentry[_-]?dsn|ingest\.sentry\.io/ },
+  { id: "push", label: "Push Notifications", platform: "Expo → Apple APNs / Google FCM",
+    detail: "Push delivery via Expo / APNs / FCM",
+    flowIn: "push token + payload", flowOut: "device-delivered notification",
+    limits: "Expo push service is free; APNs/FCM credentials must stay valid (APNs key/cert can expire).",
+    pkgs: ["expo-notifications", "@react-native-firebase/messaging"], rx: /push notification|expo[_-]?push|fcm[_-]?(server[_-]?)?key/ },
+];
+
 function buildFlow(input: {
-  kind: string; stack: string[]; pkg: any; allPaths: string[]; topDirs: string[]; readme: string | null; description: string;
+  kind: string; stack: string[]; pkg: any; allPaths: string[]; topDirs: string[]; readme: string | null; description: string; signals?: string;
 }): { pipeline: FlowNode[]; edges: FlowEdge[]; externals: ExtService[]; ops: FlowNode[] } {
-  const { kind, stack, pkg, allPaths, topDirs, readme, description } = input;
+  const { kind, stack, pkg, allPaths, topDirs, readme, description, signals } = input;
   const s = new Set(stack);
   const lowDirs = topDirs.map((d) => d.toLowerCase());
-  const text = `${readme || ""} ${description}`.toLowerCase();
+  // combined haystack: README + description + manifests/env templates + file paths
+  const text = `${readme || ""} ${description} ${signals || ""} ${allPaths.join(" ")}`.toLowerCase();
 
   const hasSupabaseFns = allPaths.some((p) => /^supabase\/functions\//.test(p));
   const hasServerDir = lowDirs.some((d) => ["api", "server", "backend", "functions", "routes"].includes(d)) || hasSupabaseFns;
@@ -144,6 +241,9 @@ function buildFlow(input: {
     pipeline.push({ id: "client", label: "Web client", detail: [...s].filter((x) => ["Next.js", "React", "Vue", "Svelte", "Angular", "TypeScript"].includes(x)).join(" · "), icon: "▢" });
   } else if (kind === "Backend service") {
     pipeline.push({ id: "client", label: "API consumers", detail: "HTTP clients", icon: "▢" });
+  } else {
+    // unknown framework (Python / Flutter / CLI / etc.) — still anchor the flow
+    pipeline.push({ id: "client", label: "Application", detail: stack.filter((x) => x !== "JavaScript").join(" · ") || kind || "App", icon: "▢" });
   }
 
   // server / edge
@@ -197,26 +297,22 @@ function buildFlow(input: {
     if (/\.channel\(|supabase\.realtime|postgres_changes/.test(text))
       addExt({ id: "supabase-realtime", label: "Supabase Realtime", detail: "WebSocket subscription to Postgres row changes", connectsTo: clientNode, flowIn: "channel subscribe (table filter)", flowOut: "INSERT / UPDATE / DELETE row events", platform: "Supabase", limits: "Free tier: 200 concurrent connections, 2M messages/month." });
   }
-  if (depHas(pkg, "react-native-purchases") || /revenuecat/.test(text))
-    addExt({ id: "revenuecat", label: "RevenueCat", detail: "Entitlements, offerings & receipt validation for in-app subscriptions", connectsTo: clientNode, flowIn: "purchase / restore request (product id)", flowOut: "CustomerInfo (active entitlements)", platform: "RevenueCat", limits: "Free up to $2.5K monthly tracked revenue, then 1% of revenue." });
-  if (depHas(pkg, "stripe") || depHas(pkg, "@stripe/stripe-js"))
-    addExt({ id: "stripe", label: "Stripe", detail: "PaymentIntents API + webhooks", connectsTo: serverOrClient, flowIn: "PaymentIntent / checkout session", flowOut: "charge result + webhook event", platform: "Stripe", limits: "No free-tier cap; per-transaction fee (~2.9% + 30¢). Restricted/secret keys can be rotated/expired in the dashboard." });
-  if (depHas(pkg, "openai"))
-    addExt({ id: "openai", label: "OpenAI API", detail: "Chat/completions endpoint", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens", platform: "OpenAI", limits: "Pay-per-token, no free tier; rate limits (RPM/TPM) scale by usage tier. API keys are long-lived until revoked." });
-  if (depHas(pkg, "@anthropic-ai/sdk"))
-    addExt({ id: "anthropic", label: "Claude API", detail: "Messages endpoint (Anthropic SDK)", connectsTo: serverOrClient, flowIn: "prompt + message history", flowOut: "streamed completion tokens", platform: "Anthropic", limits: "Pay-per-token; rate limits (RPM/TPM/ITPM) scale by usage tier. API keys are long-lived until revoked." });
-  if (depHas(pkg, "@google/generative-ai") || depHas(pkg, "@google/genai") || /\bgemini\b|generative\s*ai|google ai studio|googleai/.test(text))
-    addExt({ id: "gemini", label: "Gemini API", detail: "Google Generative AI — Gemini models (text / vision / multimodal)", connectsTo: serverOrClient, flowIn: "prompt + message history (optional images)", flowOut: "streamed completion tokens", platform: "Google (Google AI Studio / Vertex AI)", limits: "Free tier via Google AI Studio with low RPM/RPD limits (varies by model); paid tier has higher quotas. API key from AI Studio is long-lived until revoked." });
-  if (depHas(pkg, "firebase"))
-    addExt({ id: "firebase", label: "Firebase", detail: "Auth / Firestore / Cloud Messaging SDK", connectsTo: serverOrClient, flowIn: "SDK call (auth token / query)", flowOut: "realtime snapshot / auth result", platform: "Google (Firebase)", limits: "Spark (free) plan: 50K Firestore reads/day, 1 GB stored; upgrade to Blaze for pay-as-you-go." });
   if (hasHibp) {
     const hiNode = pipeline.find((n) => n.id === "server") ? "server" : clientNode;
     addExt({ id: "hibp", label: "HaveIBeenPwned", detail: "Pwned Passwords API v3 — k-anonymity model, full hash never leaves the client/server", connectsTo: hiNode, flowIn: "SHA-1 prefix (first 5 hex chars)", flowOut: "list of matching suffix:count pairs", platform: "Have I Been Pwned (Troy Hunt)", limits: "Pwned Passwords range API is free & unauthenticated; the breach-search API needs a paid key with per-tier rate limits." });
   }
-  if (depHas(pkg, "@sentry/react-native") || depHas(pkg, "@sentry/node") || depHas(pkg, "@sentry/react"))
-    addExt({ id: "sentry", label: "Sentry", detail: "Error & performance monitoring ingest", connectsTo: clientNode, flowIn: "exception event + stack trace + breadcrumbs", flowOut: "ingest ack", platform: "Sentry", limits: "Free Developer plan: 5K errors/month, 1 user; DSN is public, auth tokens can be scoped/rotated." });
-  if (depHas(pkg, "expo-notifications") || /push notification/.test(text))
-    addExt({ id: "push", label: "Push Notifications", detail: "Expo push service → APNs / FCM", connectsTo: serverOrClient, flowIn: "push token + payload", flowOut: "device-delivered notification", platform: "Expo → Apple APNs / Google FCM", limits: "Expo push service is free; APNs/FCM credentials must be kept valid (APNs key/cert can expire)." });
+
+  // Data-driven API/service catalog. Each entry matches on npm/pip/dart package
+  // names, OR on text signatures (env-var names, REST hostnames, import lines)
+  // found across README + manifests + env templates + file paths — so APIs are
+  // detected even when used via raw HTTP or env vars rather than an SDK package.
+  for (const c of API_CATALOG) {
+    const byPkg = c.pkgs?.some((p) => depHas(pkg, p));
+    const byText = c.rx?.test(text);
+    if (!byPkg && !byText) continue;
+    const node = c.side === "client" ? clientNode : serverOrClient;
+    addExt({ id: c.id, label: c.label, detail: c.detail, connectsTo: node, flowIn: c.flowIn, flowOut: c.flowOut, platform: c.platform, limits: c.limits });
+  }
 
   // ops / build
   const ops: FlowNode[] = [];
@@ -355,9 +451,10 @@ export function buildBlueprint(input: {
   techStack: string[];
   language: string | null;
   schema?: { content: string; path: string } | null;
+  signals?: string;
 }): Blueprint {
   const kind = detectKind(input.techStack, input.language);
-  const { pipeline, edges, externals, ops } = buildFlow({ kind, stack: input.techStack, pkg: input.pkg, allPaths: input.allPaths, topDirs: input.topDirs, readme: input.readme, description: input.description });
+  const { pipeline, edges, externals, ops } = buildFlow({ kind, stack: input.techStack, pkg: input.pkg, allPaths: input.allPaths, topDirs: input.topDirs, readme: input.readme, description: input.description, signals: input.signals });
   const db = input.schema ? parseSchema(input.schema.content, input.schema.path) : { tables: [], relations: [] };
   return {
     kind,
