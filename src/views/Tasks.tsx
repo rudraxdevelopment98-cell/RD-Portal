@@ -468,44 +468,34 @@ export default function Tasks() {
                     {groupAll ? "Deselect phase" : "Select phase"}
                   </button>
                 </div>
-                <div className="tbl-wrap" style={{ border: "1px solid var(--line)", borderRadius: 12 }}>
-                  <table className="tbl">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 28 }} />
-                        <th>Task</th>
-                        <th style={{ width: 160 }}>Allocate to</th>
-                        <th style={{ width: 130 }}>Due</th>
-                        <th style={{ width: 110 }}>Priority</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.items.map(({ r, i }) => (
-                        <tr key={i} style={{ opacity: r.picked ? 1 : 0.45 }}>
-                          <td><input type="checkbox" checked={r.picked} onChange={() => updateRow(i, { picked: !r.picked })} /></td>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{r.title}</div>
-                            {r.desc && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{r.desc}</div>}
-                          </td>
-                          <td>
-                            <select value={r.assignee} onChange={(e) => updateRow(i, { assignee: e.target.value })} disabled={!r.picked}>
-                              <option value="">Unassigned</option>
-                              {members.map((m) => {
-                                const u = state.users.find((x) => x.username === m.username);
-                                return <option key={m.username} value={m.username}>{u?.name ?? m.username}</option>;
-                              })}
-                            </select>
-                          </td>
-                          <td><input type="date" value={r.due} onChange={(e) => updateRow(i, { due: e.target.value })} disabled={!r.picked} /></td>
-                          <td>
-                            <select value={r.priority} onChange={(e) => updateRow(i, { priority: e.target.value as Priority })} disabled={!r.picked}>
-                              {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="plan-card">
+                  <div className="plan-grid head">
+                    <span />
+                    <span>Task</span>
+                    <span>Allocate to</span>
+                    <span>Due</span>
+                    <span>Priority</span>
+                  </div>
+                  {g.items.map(({ r, i }) => (
+                    <div key={i} className="plan-grid prow" style={{ opacity: r.picked ? 1 : 0.45 }}>
+                      <input type="checkbox" checked={r.picked} onChange={() => updateRow(i, { picked: !r.picked })} style={{ width: 16 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div className="pt-title">{r.title}</div>
+                        {r.desc && <div className="pt-desc">{r.desc}</div>}
+                      </div>
+                      <select value={r.assignee} onChange={(e) => updateRow(i, { assignee: e.target.value })} disabled={!r.picked}>
+                        <option value="">Unassigned</option>
+                        {members.map((m) => {
+                          const u = state.users.find((x) => x.username === m.username);
+                          return <option key={m.username} value={m.username}>{u?.name ?? m.username}</option>;
+                        })}
+                      </select>
+                      <input type="date" value={r.due} onChange={(e) => updateRow(i, { due: e.target.value })} disabled={!r.picked} />
+                      <select value={r.priority} onChange={(e) => updateRow(i, { priority: e.target.value as Priority })} disabled={!r.picked}>
+                        {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                  ))}
                 </div>
               </div>
             );

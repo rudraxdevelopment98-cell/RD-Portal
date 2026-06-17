@@ -548,6 +548,53 @@ table.tbl tr:hover td {
 .modal.wide {
   width: 820px;
 }
+
+/* Auto-generate plan preview */
+.plan-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px 14px 8px;
+  overflow-x: auto;
+}
+.plan-grid {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 150px 144px 116px;
+  gap: 10px;
+  align-items: center;
+  min-width: 560px;
+}
+.plan-grid.head {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.plan-grid.prow {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.plan-grid.prow:last-child {
+  border-bottom: none;
+}
+.plan-grid select,
+.plan-grid input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+.plan-grid .pt-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.plan-grid .pt-desc {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin-top: 2px;
+}
 .modal .mh {
   padding: 18px 22px;
   border-bottom: 1px solid var(--line-soft);
