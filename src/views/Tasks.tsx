@@ -28,6 +28,9 @@ export default function Tasks() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [dailyAuto, setDailyAuto] = useState(false);
+  const [view, setView] = useState<"table" | "board">(() => (localStorage.getItem("rd_tasks_view") === "board" ? "board" : "table"));
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<TaskStatus | null>(null);
 
   const pid = proj?.id ?? "";
   const td = today();
@@ -126,6 +129,22 @@ export default function Tasks() {
     const v = !dailyAuto;
     setDailyAuto(v);
     localStorage.setItem(`rd_dailyauto_${pid}`, v ? "1" : "0");
+  };
+
+  const setView_ = (v: "table" | "board") => {
+    setView(v);
+    localStorage.setItem("rd_tasks_view", v);
+  };
+
+  const dropOn = async (status: TaskStatus) => {
+    setOverCol(null);
+    if (!dragId) return;
+    const t = tasks.find((x) => x.id === dragId);
+    setDragId(null);
+    if (!t || t.status === status) return;
+    await Store.updateTask(t.id, { status });
+    await Store.addActivity(`Set task → ${status}`);
+    await reload();
   };
 
   const setStatus = async (id: string, status: string) => {
@@ -243,19 +262,36 @@ export default function Tasks() {
 
       {/* Action / sort bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>Sort</span>
-        <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
-          <option value="due">Due date</option>
-          <option value="priority">Priority</option>
-          <option value="status">Status</option>
-          <option value="title">Title</option>
-          <option value="phase">Phase</option>
-        </select>
-        <button className="btn sm" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))} title="Toggle direction">
-          {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
-        </button>
+        <div className="seg" style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: 9, overflow: "hidden" }}>
+          <button
+            className="btn sm"
+            style={{ borderRadius: 0, border: "none", background: view === "table" ? "var(--panel-2)" : "transparent" }}
+            onClick={() => setView_("table")}
+          >☰ Table</button>
+          <button
+            className="btn sm"
+            style={{ borderRadius: 0, border: "none", background: view === "board" ? "var(--panel-2)" : "transparent" }}
+            onClick={() => setView_("board")}
+          >▦ Board</button>
+        </div>
 
-        {isManager && sel.size > 0 && (
+        {view === "table" && (
+          <>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>Sort</span>
+            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
+              <option value="due">Due date</option>
+              <option value="priority">Priority</option>
+              <option value="status">Status</option>
+              <option value="title">Title</option>
+              <option value="phase">Phase</option>
+            </select>
+            <button className="btn sm" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))} title="Toggle direction">
+              {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
+            </button>
+          </>
+        )}
+
+        {view === "table" && isManager && sel.size > 0 && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="chip coral">{sel.size} selected</span>
             <select value="" onChange={(e) => e.target.value && bulkAssign(e.target.value === "__none" ? "" : e.target.value)} style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}>
@@ -281,75 +317,121 @@ export default function Tasks() {
         )}
       </div>
 
-      <div className="card">
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                {isManager && (
-                  <th style={{ width: 30 }}>
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" />
-                  </th>
-                )}
-                <th>Task</th>
-                <th>Assignee</th>
-                <th>Due</th>
-                <th>Priority</th>
-                <th>Status</th>
-                {isManager && <th />}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((t) => {
-                const late = t.status !== "Done" && t.due && t.due < td;
-                const name = assigneeName(t.assignee);
-                return (
-                  <tr key={t.id} style={sel.has(t.id) ? { background: "var(--panel-2)" } : undefined}>
-                    {isManager && (
+      {view === "table" ? (
+        <div className="card">
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  {isManager && (
+                    <th style={{ width: 30 }}>
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" />
+                    </th>
+                  )}
+                  <th>Task</th>
+                  <th>Assignee</th>
+                  <th>Due</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  {isManager && <th />}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((t) => {
+                  const late = t.status !== "Done" && t.due && t.due < td;
+                  const name = assigneeName(t.assignee);
+                  return (
+                    <tr key={t.id} style={sel.has(t.id) ? { background: "var(--panel-2)" } : undefined}>
+                      {isManager && (
+                        <td>
+                          <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggleOne(t.id)} />
+                        </td>
+                      )}
                       <td>
-                        <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggleOne(t.id)} />
+                        <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
+                          {t.title}
+                          {t.repeat === "daily" && <span className="chip gold" title="Repeats daily — a fresh copy is created every day">↻ daily</span>}
+                        </div>
+                        {t.desc && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{t.desc}</div>}
                       </td>
-                    )}
-                    <td>
-                      <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
-                        {t.title}
-                        {t.repeat === "daily" && <span className="chip gold" title="Repeats daily — a fresh copy is created every day">↻ daily</span>}
-                      </div>
-                      {t.desc && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{t.desc}</div>}
-                    </td>
-                    <td>
-                      <div className="userc">
-                        <Avatar name={name} size={26} radius="50%" />
-                        <span className="nm">{name}</span>
-                      </div>
-                    </td>
-                    <td style={late ? { color: "var(--coral)", fontFamily: "var(--mono)", fontSize: 12 } : { fontFamily: "var(--mono)", fontSize: 12 }}>
-                      {t.due || "—"}
-                    </td>
-                    <td>{priorityChip(t.priority)}</td>
-                    <td>
-                      <select
-                        value={t.status}
-                        onChange={(e) => setStatus(t.id, e.target.value)}
-                        style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}
-                      >
-                        {["To do", "In progress", "Done"].map((s) => <option key={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    {isManager && (
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn sm" style={{ marginRight: 6 }} onClick={() => openEdit(t)}>Edit</button>
-                        <button className="btn danger sm" onClick={() => deleteTask(t.id, t.title)}>Delete</button>
+                      <td>
+                        <div className="userc">
+                          <Avatar name={name} size={26} radius="50%" />
+                          <span className="nm">{name}</span>
+                        </div>
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!tasks.length && <EmptyState icon="✓" message="No tasks yet." />}
+                      <td style={late ? { color: "var(--coral)", fontFamily: "var(--mono)", fontSize: 12 } : { fontFamily: "var(--mono)", fontSize: 12 }}>
+                        {t.due || "—"}
+                      </td>
+                      <td>{priorityChip(t.priority)}</td>
+                      <td>
+                        <select
+                          value={t.status}
+                          onChange={(e) => setStatus(t.id, e.target.value)}
+                          style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}
+                        >
+                          {["To do", "In progress", "Done"].map((s) => <option key={s}>{s}</option>)}
+                        </select>
+                      </td>
+                      {isManager && (
+                        <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button className="btn sm" style={{ marginRight: 6 }} onClick={() => openEdit(t)}>Edit</button>
+                          <button className="btn danger sm" onClick={() => deleteTask(t.id, t.title)}>Delete</button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!tasks.length && <EmptyState icon="✓" message="No tasks yet." />}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="kanban">
+          {(["To do", "In progress", "Done"] as TaskStatus[]).map((col) => {
+            const colTasks = tasks
+              .filter((t) => t.status === col)
+              .sort((a, b) => (PRI_RANK[a.priority] ?? 9) - (PRI_RANK[b.priority] ?? 9) || (a.due || "~").localeCompare(b.due || "~"));
+            return (
+              <div
+                key={col}
+                className={`kanban-col${overCol === col ? " over" : ""}`}
+                onDragOver={(e) => { e.preventDefault(); setOverCol(col); }}
+                onDragLeave={() => setOverCol((c) => (c === col ? null : c))}
+                onDrop={(e) => { e.preventDefault(); dropOn(col); }}
+              >
+                <h4>{col}<span className="n">{colTasks.length}</span></h4>
+                {colTasks.map((t) => {
+                  const late = t.status !== "Done" && t.due && t.due < td;
+                  const name = assigneeName(t.assignee);
+                  return (
+                    <div
+                      key={t.id}
+                      className={`kanban-card${dragId === t.id ? " dragging" : ""}`}
+                      draggable={isManager}
+                      onDragStart={() => setDragId(t.id)}
+                      onDragEnd={() => { setDragId(null); setOverCol(null); }}
+                      onClick={() => isManager && openEdit(t)}
+                    >
+                      <div className="kt">
+                        {t.title}{t.repeat === "daily" && <span className="chip gold" style={{ marginLeft: 6 }}>↻</span>}
+                      </div>
+                      <div className="km">
+                        <Avatar name={name} size={20} radius="50%" />
+                        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{name}</span>
+                        {t.due && <span className={`due${late ? " late" : ""}`} style={{ marginLeft: "auto" }}>{t.due}</span>}
+                      </div>
+                      <div style={{ marginTop: 7 }}>{priorityChip(t.priority)}</div>
+                    </div>
+                  );
+                })}
+                {!colTasks.length && <div style={{ fontSize: 12, color: "var(--faint)", textAlign: "center", padding: "14px 0" }}>No tasks</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {editId && (
         <Modal title="Edit task" onClose={() => { setEditId(null); setForm(BLANK); }} onOk={saveEdit} okLabel="Save changes">
