@@ -80,6 +80,7 @@ export interface Task {
   phase: string;
   source?: "manual" | "github";
   ghNumber?: number; // GitHub issue number when source === "github"
+  repeat?: "daily"; // template: a fresh copy is spawned each day
   created: number;
 }
 
@@ -181,8 +182,8 @@ export interface Store {
   removeMember(id: string): Promise<void>;
   updateSelf(patch: { name?: string; password?: string }): Promise<void>;
 
-  createTask(o: Partial<Task>): Promise<void>;
-  updateTask(id: string, patch: Partial<Task>): Promise<void>;
+  createTask(o: Omit<Partial<Task>, "repeat"> & { repeat?: "daily" | null }): Promise<void>;
+  updateTask(id: string, patch: Omit<Partial<Task>, "repeat"> & { repeat?: "daily" | null }): Promise<void>;
   deleteTask(id: string): Promise<void>;
 
   createDoc(o: Partial<Doc> & { file?: File }): Promise<void>;

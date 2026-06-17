@@ -13,8 +13,8 @@ const PRI_RANK: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low:
 const STAT_RANK: Record<string, number> = { "To do": 0, "In progress": 1, "Done": 2 };
 type SortKey = "due" | "priority" | "status" | "title" | "phase";
 
-type TaskForm = { title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string };
-const BLANK: TaskForm = { title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0" };
+type TaskForm = { title: string; desc: string; assignee: string; due: string; priority: Priority; phase: string; repeat: boolean };
+const BLANK: TaskForm = { title: "", desc: "", assignee: "", due: "", priority: "High", phase: "P0", repeat: false };
 
 export default function Tasks() {
   const { state, proj, isManager, inProj, assigneeName, reload } = usePortal();
@@ -38,22 +38,37 @@ export default function Tasks() {
     setDailyAuto(localStorage.getItem(`rd_dailyauto_${pid}`) === "1");
   }, [pid]);
 
-  // opt-in: once per calendar day, ensure the generated plan exists (dedup by
-  // title+phase so it never creates duplicates). Runs only for managers.
+  // Once per calendar day, for managers: (1) spawn a fresh copy of every
+  // "repeats daily" template task, and (2) if Daily-auto is on, ensure the
+  // generated plan exists. Both dedup so nothing is ever duplicated.
   useEffect(() => {
-    if (!proj || !dailyAuto || !isManager) return;
+    if (!proj || !isManager) return;
     const runKey = `rd_dailyrun_${pid}`;
     if (localStorage.getItem(runKey) === td) return;
     (async () => {
-      const existing = new Set(state.tasks.filter((t) => t.projectId === pid).map((t) => `${t.title}|${t.phase}`));
-      const planNow = generatePlan(proj);
+      const projTasks = state.tasks.filter((t) => t.projectId === pid);
       let n = 0;
-      for (let i = 0; i < planNow.length; i++) {
-        const t = planNow[i];
-        if (existing.has(`${t.title}|${t.phase}`)) continue;
-        await Store.createTask({ title: t.title, desc: t.desc, assignee: "", due: dueFor(i), priority: t.priority, status: "To do", phase: t.phase, source: "manual" });
+
+      // (1) recurring daily templates → today's instance
+      const todayTitles = new Set(projTasks.filter((t) => t.due === td).map((t) => `${t.title}|${t.phase}`));
+      for (const tpl of projTasks.filter((t) => t.repeat === "daily")) {
+        if (todayTitles.has(`${tpl.title}|${tpl.phase}`)) continue;
+        await Store.createTask({ title: tpl.title, desc: tpl.desc, assignee: tpl.assignee, due: td, priority: tpl.priority, status: "To do", phase: tpl.phase, source: "manual" });
         n++;
       }
+
+      // (2) opt-in full plan
+      if (dailyAuto) {
+        const existing = new Set(projTasks.map((t) => `${t.title}|${t.phase}`));
+        const planNow = generatePlan(proj);
+        for (let i = 0; i < planNow.length; i++) {
+          const t = planNow[i];
+          if (existing.has(`${t.title}|${t.phase}`)) continue;
+          await Store.createTask({ title: t.title, desc: t.desc, assignee: "", due: dueFor(i), priority: t.priority, status: "To do", phase: t.phase, source: "manual" });
+          n++;
+        }
+      }
+
       localStorage.setItem(runKey, td);
       if (n) { await Store.addActivity(`Daily auto-added ${n} task${n !== 1 ? "s" : ""}`); await reload(); }
     })();
@@ -127,13 +142,18 @@ export default function Tasks() {
   };
 
   const openEdit = (t: (typeof tasks)[0]) => {
-    setForm({ title: t.title, desc: t.desc || "", assignee: t.assignee || "", due: t.due || "", priority: t.priority, phase: t.phase || "P0" });
+    setForm({ title: t.title, desc: t.desc || "", assignee: t.assignee || "", due: t.due || "", priority: t.priority, phase: t.phase || "P0", repeat: t.repeat === "daily" });
     setEditId(t.id);
+  };
+
+  const formPayload = () => {
+    const { repeat, ...rest } = form;
+    return { ...rest, repeat: repeat ? ("daily" as const) : null };
   };
 
   const createTask = async () => {
     if (!form.title.trim()) return alert("Title required");
-    await Store.createTask({ ...form });
+    await Store.createTask(formPayload());
     await Store.addActivity("Created task: " + form.title);
     setNewTask(false);
     setForm(BLANK);
@@ -143,7 +163,7 @@ export default function Tasks() {
   const saveEdit = async () => {
     if (!editId) return;
     if (!form.title.trim()) return alert("Title required");
-    await Store.updateTask(editId, { ...form });
+    await Store.updateTask(editId, formPayload());
     await Store.addActivity("Updated task: " + form.title);
     setEditId(null);
     setForm(BLANK);
@@ -293,7 +313,10 @@ export default function Tasks() {
                       </td>
                     )}
                     <td>
-                      <div style={{ fontWeight: 600 }}>{t.title}</div>
+                      <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
+                        {t.title}
+                        {t.repeat === "daily" && <span className="chip gold" title="Repeats daily — a fresh copy is created every day">↻ daily</span>}
+                      </div>
                       {t.desc && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{t.desc}</div>}
                     </td>
                     <td>
@@ -366,6 +389,10 @@ export default function Tasks() {
               </select>
             </label>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", marginTop: 4 }}>
+            <input type="checkbox" checked={form.repeat} onChange={(e) => setForm((p) => ({ ...p, repeat: e.target.checked }))} />
+            <span style={{ fontSize: 13 }}>↻ Repeats daily — auto-create a fresh copy every morning</span>
+          </label>
         </Modal>
       )}
 
@@ -405,6 +432,10 @@ export default function Tasks() {
               </select>
             </label>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", marginTop: 4 }}>
+            <input type="checkbox" checked={form.repeat} onChange={(e) => setForm((p) => ({ ...p, repeat: e.target.checked }))} />
+            <span style={{ fontSize: 13 }}>↻ Repeats daily — auto-create a fresh copy every morning</span>
+          </label>
         </Modal>
       )}
 
