@@ -111,6 +111,45 @@ export async function fetchRepoSnapshot(repo: string, force = false): Promise<Re
   }
 }
 
+/* ---------- list the signed-in user's repos (requires a token) ---------- */
+export interface MyRepo {
+  repo: string;          // owner/name
+  description: string | null;
+  private: boolean;
+  language: string | null;
+  stars: number;
+  updatedAt: string | null;
+  fork: boolean;
+}
+
+export async function listMyRepos(force = false): Promise<{ repos: MyRepo[]; error?: string }> {
+  if (!hasToken()) return { repos: [], error: "Connect a GitHub token first." };
+  if (!force) { const c = readCache<MyRepo[]>("myrepos"); if (c) return { repos: c }; }
+  try {
+    const out: MyRepo[] = [];
+    for (let page = 1; page <= 5; page++) {
+      const batch = await gh(`/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`);
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      for (const r of batch) {
+        out.push({
+          repo: r.full_name,
+          description: r.description ?? null,
+          private: !!r.private,
+          language: r.language ?? null,
+          stars: r.stargazers_count ?? 0,
+          updatedAt: r.pushed_at ?? r.updated_at ?? null,
+          fork: !!r.fork,
+        });
+      }
+      if (batch.length < 100) break;
+    }
+    writeCache("myrepos", out);
+    return { repos: out };
+  } catch (e: any) {
+    return { repos: [], error: e?.message || "Could not load your repositories." };
+  }
+}
+
 /* ---------- full analysis (for onboarding + sync) ---------- */
 export interface ImportedTask { ghNumber: number; title: string; body: string; state: "open" | "closed"; labels: string[]; url: string }
 

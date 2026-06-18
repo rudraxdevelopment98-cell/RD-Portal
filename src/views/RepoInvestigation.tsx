@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { analyzeRepo, hasToken, type RepoAnalysis, type ImportedTask } from "../lib/github";
+import { analyzeRepo, hasToken, listMyRepos, type RepoAnalysis, type ImportedTask, type MyRepo } from "../lib/github";
 import { onboardFromGitHub } from "../lib/sync";
 import { usePortal } from "../context/PortalContext";
+import { Store } from "../lib/store";
 import RepoTree from "../components/RepoTree";
 import Avatar from "../components/Avatar";
 
@@ -38,9 +39,9 @@ export default function RepoInvestigation({ onClose, onDone, onNeedToken }: {
   onDone: (id: string) => void;
   onNeedToken: () => void;
 }) {
-  const { reload } = usePortal();
+  const { state, reload } = usePortal();
   const [url, setUrl] = useState("");
-  const [phase, setPhase] = useState<"input" | "scanning" | "review" | "importing">("input");
+  const [phase, setPhase] = useState<"input" | "browse" | "scanning" | "review" | "importing">("input");
   const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus>>({});
   const [analysis, setAnalysis] = useState<RepoAnalysis | null>(null);
   const [err, setErr] = useState("");
@@ -49,20 +50,50 @@ export default function RepoInvestigation({ onClose, onDone, onNeedToken }: {
   const [keyOverride, setKeyOverride] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  const [myRepos, setMyRepos] = useState<MyRepo[] | null>(null);
+  const [reposBusy, setReposBusy] = useState(false);
+  const [reposErr, setReposErr] = useState("");
+  const [q, setQ] = useState("");
+
+  useEffect(() => { inputRef.current?.focus(); }, [phase]);
+
+  const importedRepoMap = new Map(state.projects.filter((p) => p.repo).map((p) => [p.repo!.toLowerCase(), p.id]));
+
+  const browse = async (force = false) => {
+    setPhase("browse"); setReposErr("");
+    if (!force && myRepos) return;
+    setReposBusy(true);
+    const r = await listMyRepos(force);
+    setReposBusy(false);
+    if (r.error) { setReposErr(r.error); return; }
+    setMyRepos(r.repos);
+  };
+
+  const revoke = async (projectId: string, name: string) => {
+    if (!confirm(`Remove "${name}" from the portal? This deletes its tasks, docs and activity. The GitHub repo itself is untouched.`)) return;
+    await Store.deleteProject(projectId);
+    await reload();
+  };
+
+  const pickRepo = (repo: string) => { setUrl(repo); setPhase("input"); scan(repo); };
+
+  const filteredRepos = (myRepos || []).filter((r) =>
+    !q.trim() || r.repo.toLowerCase().includes(q.toLowerCase()) || (r.description || "").toLowerCase().includes(q.toLowerCase())
+  );
 
   const setStep = (id: string, s: StepStatus) =>
     setStepStatuses((prev) => ({ ...prev, [id]: s }));
 
-  const scan = async () => {
-    if (!url.trim()) return;
+  const scan = async (repoOverride?: string) => {
+    const target = repoOverride ?? url;
+    if (!target.trim()) return;
     setErr("");
     setPhase("scanning");
     setStepStatuses(Object.fromEntries(STEPS.map((s) => [s.id, "wait"])));
 
     setStep("meta", "running");
     await delay(350);
-    const a = await analyzeRepo(url);
+    const a = await analyzeRepo(target);
     setStep("meta", "done");
 
     if (a.error) {
@@ -127,6 +158,7 @@ export default function RepoInvestigation({ onClose, onDone, onNeedToken }: {
             <span style={{ fontSize: 18, color: "var(--coral)" }}>⎇</span>
             <b style={{ fontSize: 15 }}>
               {phase === "input" && "Add project from GitHub"}
+              {phase === "browse" && "Your GitHub repositories"}
               {phase === "scanning" && "Investigating repository…"}
               {phase === "review" && (analysis?.name ?? "Project brief")}
               {phase === "importing" && "Importing project…"}
@@ -153,20 +185,84 @@ export default function RepoInvestigation({ onClose, onDone, onNeedToken }: {
                 onKeyDown={(e) => { if (e.key === "Enter") scan(); }}
               />
             </div>
-            {!hasToken() && (
+            {hasToken() ? (
+              <button className="btn ghost sm" style={{ marginBottom: 16 }} onClick={() => browse()}>
+                ⎇ Browse my GitHub repos
+              </button>
+            ) : (
               <p style={{ fontSize: 12, color: "var(--faint)", margin: "0 0 16px" }}>
-                Analysing public repos. For private repos or higher rate limits,{" "}
+                Analysing public repos. For private repos, higher rate limits, and browsing your repo list,{" "}
                 <a onClick={onNeedToken} style={{ cursor: "pointer", color: "var(--coral)" }}>add a GitHub token</a>.
               </p>
             )}
             {err && <div className="inv-err">{err}</div>}
             <div className="inv-footer">
               <button className="btn ghost" onClick={onClose}>Cancel</button>
-              <button className="btn primary" onClick={scan} disabled={!url.trim()}>
+              <button className="btn primary" onClick={() => scan()} disabled={!url.trim()}>
                 Investigate →
               </button>
             </div>
           </div>
+        )}
+
+        {/* ── browse phase: connected GitHub account's repo list ── */}
+        {phase === "browse" && (
+          <>
+            <div className="inv-body" style={{ paddingBottom: 10 }}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <span>Search your repositories</span>
+                <input
+                  autoFocus
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Filter by name or description…"
+                />
+              </div>
+            </div>
+            <div className="inv-body inv-scroll" style={{ paddingTop: 0 }}>
+              {reposBusy && <div style={{ textAlign: "center", padding: "30px 0", color: "var(--muted)" }}><span className="spin" style={{ fontSize: 22 }}>◌</span></div>}
+              {reposErr && <div className="inv-err">{reposErr}</div>}
+              {!reposBusy && !reposErr && filteredRepos.length === 0 && (
+                <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>No repositories found.</div>
+              )}
+              {!reposBusy && filteredRepos.map((r) => {
+                const importedId = importedRepoMap.get(r.repo.toLowerCase());
+                return (
+                  <div key={r.repo} className="inv-task-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="inv-task-title">
+                        {r.repo}
+                        {r.private && <span className="chip" style={{ fontSize: 9.5, marginLeft: 6 }}>private</span>}
+                        {r.fork && <span className="chip" style={{ fontSize: 9.5, marginLeft: 6 }}>fork</span>}
+                      </div>
+                      {r.description && <div className="inv-task-body">{r.description}</div>}
+                      <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 10.5, color: "var(--faint)", fontFamily: "var(--mono)" }}>
+                        {r.language && <span>{r.language}</span>}
+                        <span>★ {r.stars}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                      {importedId ? (
+                        <>
+                          <span className="chip sage" style={{ fontSize: 10 }}>imported</span>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button className="btn ghost sm" onClick={() => onDone(importedId)}>Open</button>
+                            <button className="btn danger sm" onClick={() => revoke(importedId, r.repo)}>Revoke</button>
+                          </div>
+                        </>
+                      ) : (
+                        <button className="btn primary sm" onClick={() => pickRepo(r.repo)}>Import →</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="inv-footer">
+              <button className="btn ghost" onClick={() => setPhase("input")}>← Back</button>
+              <button className="btn ghost" onClick={() => browse(true)} disabled={reposBusy}>⟳ Refresh list</button>
+            </div>
+          </>
         )}
 
         {/* ── scanning phase ── */}
