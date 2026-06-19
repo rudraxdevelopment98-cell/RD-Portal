@@ -147,6 +147,17 @@
   .login-card {
     padding: 28px 20px;
   }
+
+  /* voice assistant sits above the bottom nav */
+  .voice-fab {
+    bottom: 76px;
+    right: 14px;
+  }
+  .voice-panel {
+    bottom: 138px;
+    right: 14px;
+    width: calc(100vw - 28px);
+  }
 }
 
 @media (max-width: 480px) {

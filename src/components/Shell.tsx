@@ -3,6 +3,7 @@ import { usePortal } from "../context/PortalContext";
 import { SECTIONS } from "../lib/roles";
 import Avatar from "./Avatar";
 import TokenSettings from "./TokenSettings";
+import VoiceAssistant from "./VoiceAssistant";
 import { hasToken } from "../lib/github";
 import viewFor from "../views";
 import ErrorBoundary from "./ErrorBoundary";
@@ -160,6 +161,8 @@ export default function Shell() {
       </nav>
 
       {tokenOpen && <TokenSettings onClose={() => setTokenOpen(false)} />}
+
+      <VoiceAssistant />
     </div>
   );
 }
